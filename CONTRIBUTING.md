@@ -1,4 +1,4 @@
-# Contributing to Remodex
+# Contributing to Codex Remote / Remodex
 
 I am not actively accepting contributions right now.
 
@@ -47,8 +47,8 @@ Opening a PR does not create an obligation on my side. I may close it. I may ign
 
 ```sh
 # Clone the repo
-git clone https://github.com/Emanuele-web04/remodex.git
-cd remodex
+git clone https://github.com/lidongyx/codex-remote.git
+cd codex-remote
 
 # Start a local relay + bridge together
 ./run-local-remodex.sh
@@ -59,6 +59,13 @@ This launcher:
 2. Starts a local relay on `/relay/{sessionId}`
 3. Points the bridge at that relay
 4. Prints a QR code in your terminal for the initial trust bootstrap
+
+If you want one root entrypoint for the Node services:
+
+```sh
+npm run bootstrap:node
+npm run test:node
+```
 
 If you only want the bridge process:
 
@@ -116,7 +123,7 @@ REMODEX_REFRESH_ENABLED=true npm start
 ### Project structure
 
 ```
-remodex/
+codex-remote/
 ├── phodex-bridge/          # Node.js CLI bridge (npm package)
 │   ├── bin/remodex.js      # CLI entrypoint
 │   └── src/
@@ -148,6 +155,13 @@ remodex/
 │   ├── CodexMobileTests/   # Unit tests
 │   ├── CodexMobileUITests/ # UI tests
 │   └── BuildSupport/       # Build support files
+│
+├── relay/                  # Self-hostable relay server
+│   ├── server.js           # Relay entrypoint
+│   ├── relay.js            # Session routing and coordination
+│   └── push-service.js     # Optional push registration/completion flow
+│
+├── package.json            # Root maintenance scripts for bridge + relay
 ```
 
 ### Code style

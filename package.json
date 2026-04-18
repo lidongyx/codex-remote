@@ -1,0 +1,17 @@
+{
+  "name": "codex-remote",
+  "private": true,
+  "description": "Unified local-first workspace for the Remodex bridge, relay, and iOS client.",
+  "scripts": {
+    "bootstrap:node": "npm --prefix phodex-bridge ci && npm --prefix relay ci",
+    "dev:bridge": "npm --prefix phodex-bridge start",
+    "dev:relay": "npm --prefix relay start",
+    "dev:local": "./run-local-remodex.sh",
+    "test:bridge": "npm --prefix phodex-bridge test",
+    "test:relay": "npm --prefix relay test",
+    "test:node": "npm run test:bridge && npm run test:relay"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

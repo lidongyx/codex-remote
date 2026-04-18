@@ -12,6 +12,8 @@ Control [Codex](https://openai.com/index/codex/) from your iPhone. Remodex is a 
 
 This repository is also set up as a unified local-first workspace for the full stack: desktop bridge, self-hostable relay, and the iOS client. It is ready to grow into future web and Android clients without changing the local-first transport model.
 
+The repository name is `codex-remote`, while the current shipped app and CLI still use the `Remodex` product name. That keeps the existing package name, iOS target, and pairing flow stable while the codebase grows into a broader multi-client workspace.
+
 ## Key App Features
 
 - End-to-end encrypted pairing and chats between your iPhone and Mac
@@ -94,6 +96,20 @@ This repo contains the local bridge, the self-hostable relay, the iOS app target
 │   └── BuildSupport/             # Info.plist, xcconfig defaults, and local override templates
 ```
 
+## Workspace Commands
+
+Use the root scripts when you want one maintenance entrypoint for the Node services:
+
+```sh
+npm run bootstrap:node
+npm run test:node
+npm run dev:relay
+npm run dev:bridge
+npm run dev:local
+```
+
+The iOS app remains a standalone Xcode project under `CodexMobile/`.
+
 ## Suggested Branch Model
 
 - `main`: integrated monorepo branch for releases and cross-stack changes
@@ -102,6 +118,13 @@ This repo contains the local bridge, the self-hostable relay, the iOS app target
 - `ios-dev`: iOS client work and transport/UI iteration
 
 You can later add `web-dev` and `android-dev` when those clients exist, while still keeping `main` as the integration branch.
+
+## Expansion Path
+
+- Keep the current directories stable until there is a concrete reason to move them.
+- Add future web and Android clients as sibling apps instead of mixing them into bridge or relay code.
+- Centralize shared protocol and transport behavior in services/coordinators instead of duplicating it across clients.
+- Preserve the local-first model and avoid hardcoded hosted-service assumptions as the repo expands.
 
 ## Prerequisites
 
@@ -152,8 +175,8 @@ For now, the daemon-backed trusted reconnect path is macOS-only. If you self-hos
 ## Run Locally
 
 ```sh
-git clone https://github.com/Emanuele-web04/remodex.git
-cd remodex
+git clone https://github.com/lidongyx/codex-remote.git
+cd codex-remote
 ./run-local-remodex.sh
 ```
 
