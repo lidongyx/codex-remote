@@ -56,3 +56,36 @@ public struct V2ProbeResult: Sendable {
     public let resolvedSession: V2SessionResolveResponse
     public let frames: [V2ServerFrame]
 }
+
+public struct V2ResolvedConnection: Sendable {
+    public let daemonHealth: V2DaemonHealthSnapshot
+    public let resolvedSession: V2SessionResolveResponse
+    public let macDeviceID: String
+    public let phoneDeviceID: String
+    public let websocketURL: URL
+}
+
+public struct V2TimelineState: Sendable {
+    public var frames: [V2ServerFrame]
+    public var latestThreadID: String?
+    public var didReceiveSessionReady: Bool
+    public var didReceiveThreadList: Bool
+    public var didReceiveRunCompletion: Bool
+    public var didReceiveCatchUpBatch: Bool
+
+    public init(
+        frames: [V2ServerFrame] = [],
+        latestThreadID: String? = nil,
+        didReceiveSessionReady: Bool = false,
+        didReceiveThreadList: Bool = false,
+        didReceiveRunCompletion: Bool = false,
+        didReceiveCatchUpBatch: Bool = false
+    ) {
+        self.frames = frames
+        self.latestThreadID = latestThreadID
+        self.didReceiveSessionReady = didReceiveSessionReady
+        self.didReceiveThreadList = didReceiveThreadList
+        self.didReceiveRunCompletion = didReceiveRunCompletion
+        self.didReceiveCatchUpBatch = didReceiveCatchUpBatch
+    }
+}

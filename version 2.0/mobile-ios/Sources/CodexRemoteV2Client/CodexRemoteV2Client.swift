@@ -46,13 +46,12 @@ public final class CodexRemoteV2Client {
         return try JSONDecoder().decode(V2SessionResolveResponse.self, from: data)
     }
 
-    public func runProbe(
-        macDeviceID: String? = nil,
-        prompt: String = "Create a placeholder remote run from Swift."
-    ) async throws -> V2ProbeResult {
+    public func resolveConnection(
+        macDeviceID: String? = nil
+    ) async throws -> V2ResolvedConnection {
         let daemonHealth = try await fetchDaemonHealth()
         let resolvedMacDeviceID = macDeviceID ?? daemonHealth.macDeviceID
-        let phoneDeviceID = "swift-phone-probe-\(UUID().uuidString)"
+        let phoneDeviceID = "swift-phone-\(UUID().uuidString)"
         let resolvedSession = try await resolveSession(
             macDeviceID: resolvedMacDeviceID,
             phoneDeviceID: phoneDeviceID
@@ -66,56 +65,142 @@ public final class CodexRemoteV2Client {
                 URLQueryItem(name: "device_id", value: phoneDeviceID),
             ])
 
-        let task = urlSession.webSocketTask(with: websocketURL)
-        task.resume()
+        return V2ResolvedConnection(
+            daemonHealth: daemonHealth,
+            resolvedSession: resolvedSession,
+            macDeviceID: resolvedMacDeviceID,
+            phoneDeviceID: phoneDeviceID,
+            websocketURL: websocketURL
+        )
+    }
 
+    public func openSession(
+        connection: V2ResolvedConnection
+    ) -> URLSessionWebSocketTask {
+        let task = urlSession.webSocketTask(with: connection.websocketURL)
+        task.resume()
+        return task
+    }
+
+    public func sendSessionResume(
+        task: URLSessionWebSocketTask,
+        connection: V2ResolvedConnection
+    ) async throws {
         try await task.send(.data(
             V2ProtoCodec.makeSessionResumeFrame(
-                macDeviceID: resolvedMacDeviceID,
-                phoneDeviceID: phoneDeviceID
+                macDeviceID: connection.macDeviceID,
+                phoneDeviceID: connection.phoneDeviceID
             )
         ))
-        try await task.send(.data(
-            V2ProtoCodec.makeThreadListRequestFrame()
-        ))
+    }
 
-        var frames: [V2ServerFrame] = []
+    public func sendThreadListRequest(
+        task: URLSessionWebSocketTask,
+        sinceGlobalSequence: UInt64 = 0
+    ) async throws {
+        try await task.send(.data(
+            V2ProtoCodec.makeThreadListRequestFrame(sinceGlobalSequence: sinceGlobalSequence)
+        ))
+    }
+
+    public func sendRunStart(
+        task: URLSessionWebSocketTask,
+        prompt: String,
+        threadID: String = ""
+    ) async throws {
+        try await task.send(.data(
+            V2ProtoCodec.makeRunStartRequestFrame(threadID: threadID, text: prompt)
+        ))
+    }
+
+    public func sendThreadCatchUp(
+        task: URLSessionWebSocketTask,
+        threadID: String,
+        sinceThreadSequence: UInt64 = 0
+    ) async throws {
+        try await task.send(.data(
+            V2ProtoCodec.makeThreadCatchUpRequestFrame(
+                threadID: threadID,
+                sinceThreadSequence: sinceThreadSequence
+            )
+        ))
+    }
+
+    public func receiveFrame(
+        task: URLSessionWebSocketTask
+    ) async throws -> V2ServerFrame? {
+        let message = try await task.receive()
+        switch message {
+        case .data(let data):
+            return try V2ProtoCodec.decodeServerFrame(data)
+        case .string:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
+
+    public func apply(
+        _ frame: V2ServerFrame,
+        to state: V2TimelineState
+    ) -> V2TimelineState {
+        var next = state
+        next.frames.append(frame)
+
+        switch frame {
+        case .sessionReady:
+            next.didReceiveSessionReady = true
+        case .threadListSnapshot:
+            next.didReceiveThreadList = true
+        case let .runStarted(threadID, _, _, _):
+            next.latestThreadID = threadID
+        case .runCompletion:
+            next.didReceiveRunCompletion = true
+        case let .threadCatchUpBatch(threadID, _, _, _):
+            next.latestThreadID = threadID
+            next.didReceiveCatchUpBatch = true
+        case .reasoning, .assistantText, .error:
+            break
+        }
+
+        return next
+    }
+
+    public func runProbe(
+        macDeviceID: String? = nil,
+        prompt: String = "Create a placeholder remote run from Swift."
+    ) async throws -> V2ProbeResult {
+        let connection = try await resolveConnection(macDeviceID: macDeviceID)
+        let task = openSession(connection: connection)
+        try await sendSessionResume(task: task, connection: connection)
+        try await sendThreadListRequest(task: task)
+
+        var timeline = V2TimelineState()
         var sentRunStart = false
         var sentCatchUp = false
 
         while true {
-            let message = try await task.receive()
-            switch message {
-            case .data(let data):
-                let frame = try V2ProtoCodec.decodeServerFrame(data)
-                frames.append(frame)
+            if let frame = try await receiveFrame(task: task) {
+                timeline = apply(frame, to: timeline)
 
                 if case .threadListSnapshot = frame, !sentRunStart {
                     sentRunStart = true
-                    try await task.send(.data(
-                        V2ProtoCodec.makeRunStartRequestFrame(text: prompt)
-                    ))
+                    try await sendRunStart(task: task, prompt: prompt)
                 }
 
                 if case let .runCompletion(threadID, _, _, _, _) = frame, !sentCatchUp {
                     sentCatchUp = true
-                    try await task.send(.data(
-                        V2ProtoCodec.makeThreadCatchUpRequestFrame(threadID: threadID)
-                    ))
+                    try await sendThreadCatchUp(task: task, threadID: threadID)
                 }
 
                 if case .threadCatchUpBatch = frame {
                     task.cancel(with: .normalClosure, reason: nil)
                     return V2ProbeResult(
-                        daemonHealth: daemonHealth,
-                        resolvedSession: resolvedSession,
-                        frames: frames
+                        daemonHealth: connection.daemonHealth,
+                        resolvedSession: connection.resolvedSession,
+                        frames: timeline.frames
                     )
                 }
-            case .string:
-                continue
-            @unknown default:
-                continue
             }
         }
     }
