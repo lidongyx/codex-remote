@@ -493,7 +493,7 @@ struct SidebarView: View {
         }
 
         let trimmedTitle = thread.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "Untitled Thread" : trimmedTitle
+        return trimmedTitle.isEmpty ? "Untitled Chat" : trimmedTitle
     }
 }
 
@@ -554,7 +554,7 @@ private struct SidebarV2WorkspaceSummary: View {
             } else {
                 Text(threadCount == 0
                      ? "Open the V2 beta workspace to connect and keep these chats separate from the legacy sidebar."
-                     : "\(threadCount) chats are available inside the V2 beta workspace.")
+                     : "\(threadCount) chats are available inside the V2 beta chat workspace.")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
                     .lineLimit(3)

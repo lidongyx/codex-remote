@@ -424,7 +424,7 @@ struct CodexV2WorkspaceView: View {
             let detail: String
             if let snapshot = client.displayedThreadRecoverySnapshot {
                 detail = snapshot.hasMore
-                    ? "Recovered \(snapshot.eventCount) events so far. More catch-up is still available."
+                    ? "Recovered \(snapshot.eventCount) events so far. More messages are still being restored."
                     : "Recovered \(snapshot.eventCount) events and refreshed the latest chat state."
             } else {
                 detail = "Refreshing the selected chat so the timeline stays coherent after reconnect."
@@ -571,8 +571,8 @@ struct CodexV2WorkspaceView: View {
         if client.isRestoringSelectedThread {
             if let snapshot = client.displayedThreadRecoverySnapshot {
                 return snapshot.hasMore
-                    ? "The relay has already delivered \(snapshot.eventCount) recovery events. More thread history is still being pulled in."
-                    : "The latest messages are restored. You can keep chatting in this thread."
+                    ? "The relay has already delivered \(snapshot.eventCount) recovery events. More chat history is still being pulled in."
+                    : "The latest messages are restored. You can keep chatting here."
             }
             return "Refreshing the selected chat so reconnect keeps the page stable."
         }
@@ -582,7 +582,7 @@ struct CodexV2WorkspaceView: View {
         }
 
         if client.isStartingFreshConversation {
-            return "Type below to begin a fresh chat without mixing it into an older thread."
+            return "Type below to begin a fresh chat without mixing it into an older chat."
         }
 
         if client.selectedThreadID != nil {

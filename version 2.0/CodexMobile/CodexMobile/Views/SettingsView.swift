@@ -941,7 +941,7 @@ private struct SettingsV2TestingCard: View {
             HStack(spacing: 8) {
                 SettingsStatusPill(label: codexV2.isConnected ? "V2 live" : "V2 idle")
                 if !codexV2.timeline.threadSummaries.isEmpty {
-                    SettingsStatusPill(label: "\(codexV2.timeline.threadSummaries.count) threads")
+                    SettingsStatusPill(label: "\(codexV2.timeline.threadSummaries.count) chats")
                 }
             }
 

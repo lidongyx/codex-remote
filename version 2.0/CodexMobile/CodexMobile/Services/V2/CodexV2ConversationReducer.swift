@@ -176,23 +176,23 @@ enum CodexV2ConversationReducer {
             reasoningItemID: reasoningItemID
         )
 
-        if updateMessage(itemID: itemID, in: threadKey, state: &state) { item in
+        if updateMessage(itemID: itemID, in: threadKey, state: &state, mutate: { item in
             item.text += delta
             item.isStreaming = true
-        } {
+        }) {
             return
         }
 
         if role == .reasoning,
            updateFirstMessage(in: threadKey, state: &state, matching: { item in
                item.role == .reasoning && item.turnID == turnID && item.isStreaming
-           }) { item in
+           }, mutate: { item in
                item.text += delta
                item.isStreaming = true
                if item.reasoningItemID == nil {
                    item.reasoningItemID = reasoningItemID
                }
-           } {
+           }) {
             return
         }
 
@@ -226,10 +226,10 @@ enum CodexV2ConversationReducer {
 
         if !trimmedError.isEmpty {
             let itemID = messageIdentifier(role: .error, turnID: turnID, reasoningItemID: nil)
-            let didUpdateError = updateMessage(itemID: itemID, in: threadKey, state: &state) { item in
+            let didUpdateError = updateMessage(itemID: itemID, in: threadKey, state: &state, mutate: { item in
                 item.text = trimmedError
                 item.isStreaming = false
-            }
+            })
             if !didUpdateError {
                 state.messagesByThreadID[threadKey, default: []].append(
                     CodexV2ConversationItem(
@@ -271,7 +271,9 @@ enum CodexV2ConversationReducer {
         in state: inout CodexV2ConversationState
     ) {
         let threadKey = normalizedThreadKey(threadID)
-        if events.first?.sequence == 1 {
+        let previousSnapshot = state.recoveryByThreadID[threadKey]
+        let isFreshRecovery = events.first?.sequence == 1
+        if isFreshRecovery {
             state.messagesByThreadID[threadKey] = []
         }
 
@@ -281,7 +283,7 @@ enum CodexV2ConversationReducer {
 
         state.recoveryByThreadID[threadKey] = CodexV2ThreadRecoverySnapshot(
             latestThreadSequence: latestThreadSequence,
-            eventCount: events.count,
+            eventCount: (isFreshRecovery ? 0 : previousSnapshot?.eventCount ?? 0) + events.count,
             hasMore: hasMore
         )
     }
@@ -341,19 +343,19 @@ enum CodexV2ConversationReducer {
         }
 
         let itemID = messageIdentifier(role: .user, turnID: turnID, reasoningItemID: nil)
-        if updateMessage(itemID: itemID, in: threadID, state: &state) { item in
+        if updateMessage(itemID: itemID, in: threadID, state: &state, mutate: { item in
             item.text = trimmedText
             item.isStreaming = false
-        } {
+        }) {
             return
         }
 
         if updateFirstMessage(in: threadID, state: &state, matching: { item in
             item.role == .user && item.turnID == turnID
-        }) { item in
+        }, mutate: { item in
             item.text = trimmedText
             item.isStreaming = false
-        } {
+        }) {
             return
         }
 
@@ -413,10 +415,10 @@ enum CodexV2ConversationReducer {
     ) {
         let threadKey = normalizedThreadKey(threadID)
         let itemID = messageIdentifier(role: .error, turnID: turnID, reasoningItemID: nil)
-        if updateMessage(itemID: itemID, in: threadKey, state: &state) { item in
+        if updateMessage(itemID: itemID, in: threadKey, state: &state, mutate: { item in
             item.text = message
             item.isStreaming = false
-        } {
+        }) {
             return
         }
 

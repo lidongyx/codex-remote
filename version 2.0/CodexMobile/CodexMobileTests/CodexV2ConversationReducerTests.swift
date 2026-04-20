@@ -247,4 +247,59 @@ final class CodexV2ConversationReducerTests: XCTestCase {
         XCTAssertEqual(messages.map(\.role), [.user, .error])
         XCTAssertEqual(messages.last?.text, "Run failed.")
     }
+
+    func testCatchupSnapshotAccumulatesEventCountAcrossBatches() {
+        var state = CodexV2ConversationState()
+
+        CodexV2ConversationReducer.apply(
+            .threadCatchUpBatch(
+                threadID: "thread-v2",
+                latestThreadSequence: 2,
+                events: [
+                    CodexV2ThreadEvent(
+                        sequence: 1,
+                        payload: .userMessage(turnID: "turn-v2", text: "Restore this chat.")
+                    ),
+                    CodexV2ThreadEvent(
+                        sequence: 2,
+                        payload: .assistantDelta(turnID: "turn-v2", delta: "First batch.")
+                    ),
+                ],
+                hasMore: true
+            ),
+            to: &state
+        )
+
+        CodexV2ConversationReducer.apply(
+            .threadCatchUpBatch(
+                threadID: "thread-v2",
+                latestThreadSequence: 4,
+                events: [
+                    CodexV2ThreadEvent(
+                        sequence: 3,
+                        payload: .assistantDelta(turnID: "turn-v2", delta: " Second batch.")
+                    ),
+                    CodexV2ThreadEvent(
+                        sequence: 4,
+                        payload: .statusChanged(turnID: "turn-v2", status: "completed")
+                    ),
+                ],
+                hasMore: false
+            ),
+            to: &state
+        )
+
+        XCTAssertEqual(
+            state.recoveryByThreadID["thread-v2"],
+            CodexV2ThreadRecoverySnapshot(
+                latestThreadSequence: 4,
+                eventCount: 4,
+                hasMore: false
+            )
+        )
+        XCTAssertEqual(
+            state.messagesByThreadID["thread-v2"]?.last?.text,
+            "First batch. Second batch."
+        )
+    }
 }
