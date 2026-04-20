@@ -58,8 +58,8 @@ struct ContentView: View {
     @AppStorage("codex.hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("codex.whatsNew.lastPresentedVersion") private var lastPresentedWhatsNewVersion = ""
     @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
-    @State private var isShowingV2WorkspaceSheet = false
-    @State private var shouldPresentV2WorkspaceAfterSidebarCloses = false
+    @State private var showV2Workspace = false
+    @State private var shouldNavigateToV2WorkspaceAfterSidebarCloses = false
 
     private let sidebarWidth: CGFloat = 330
     // Lets the drawer gesture start a bit inside the content instead of only on the bezel edge.
@@ -101,16 +101,22 @@ struct ContentView: View {
                     showSettings = false
                 }
             }
+            .onChange(of: showV2Workspace) { _, show in
+                if show {
+                    navigationPath.append("v2workspace")
+                    showV2Workspace = false
+                }
+            }
             .onChange(of: isSidebarOpen) { wasOpen, isOpen in
                 debugSidebarLog(
                     "open-state changed wasOpen=\(wasOpen) isOpen=\(isOpen) prewarmed=\(isSidebarPrewarmed) "
                         + "dragOffset=\(Int(sidebarDragOffset)) threadCount=\(codex.threads.count)"
                 )
-                if wasOpen, !isOpen, shouldPresentV2WorkspaceAfterSidebarCloses {
-                    shouldPresentV2WorkspaceAfterSidebarCloses = false
+                if wasOpen, !isOpen, shouldNavigateToV2WorkspaceAfterSidebarCloses {
+                    shouldNavigateToV2WorkspaceAfterSidebarCloses = false
                     Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 180_000_000)
-                        isShowingV2WorkspaceSheet = true
+                        showV2Workspace = true
                     }
                 }
                 guard !wasOpen, isOpen else {
@@ -148,8 +154,9 @@ struct ContentView: View {
                 selectedThread = matchingThread
             }
             .onChange(of: v2WorkspaceEnabled) { _, isEnabled in
-                if !isEnabled, isShowingV2WorkspaceSheet {
-                    isShowingV2WorkspaceSheet = false
+                if !isEnabled {
+                    shouldNavigateToV2WorkspaceAfterSidebarCloses = false
+                    showV2Workspace = false
                 }
             }
             .onChange(of: codex.threads) { _, threads in
@@ -272,18 +279,6 @@ struct ContentView: View {
             } message: {
                 Text("Paste the pairing code shown in the terminal on your Mac or in your phone shell.")
             }
-            .fullScreenCover(isPresented: $isShowingV2WorkspaceSheet) {
-                NavigationStack {
-                    CodexV2WorkspaceView()
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") {
-                                    isShowingV2WorkspaceSheet = false
-                                }
-                            }
-                        }
-                }
-            }
     }
 
     private var rootContentWithBannerOverlay: some View {
@@ -379,7 +374,7 @@ struct ContentView: View {
                         showSettings: $showSettings,
                         isSearchActive: $isSearchActive,
                         showsV2WorkspaceButton: v2WorkspaceEnabled,
-                        isV2WorkspaceSelected: isShowingV2WorkspaceSheet,
+                        isV2WorkspaceSelected: false,
                         showsInlineCloseButton: shouldUseFullWidthSidebar,
                         isVisible: sidebarVisible,
                         onClose: { closeSidebar() },
@@ -428,6 +423,9 @@ struct ContentView: View {
                 .navigationDestination(for: String.self) { destination in
                     if destination == "settings" {
                         SettingsView()
+                            .adaptiveNavigationBar()
+                    } else if destination == "v2workspace" {
+                        CodexV2WorkspaceView()
                             .adaptiveNavigationBar()
                     }
                 }
@@ -826,12 +824,12 @@ struct ContentView: View {
 
     private func openV2Workspace() {
         if isSidebarOpen || sidebarDragOffset > 0 {
-            shouldPresentV2WorkspaceAfterSidebarCloses = true
+            shouldNavigateToV2WorkspaceAfterSidebarCloses = true
             closeSidebar()
             return
         }
 
-        isShowingV2WorkspaceSheet = true
+        showV2Workspace = true
     }
 
     // Keeps first-run installs in the scanner by default, while still letting users back out later.

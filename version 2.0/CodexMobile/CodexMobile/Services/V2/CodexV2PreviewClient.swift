@@ -42,6 +42,7 @@ final class CodexV2PreviewClient {
         static let daemonHealthURLString = "codex.v2Preview.daemonHealthURLString"
         static let macDeviceIDOverride = "codex.v2Preview.macDeviceIDOverride"
         static let prompt = "codex.v2Preview.prompt"
+        static let selectedThreadID = "codex.v2Preview.selectedThreadID"
     }
 
     var relayHTTPBaseURLString = Defaults.relayHTTPBaseURLString {
@@ -70,7 +71,11 @@ final class CodexV2PreviewClient {
     private(set) var activeThreadID: String?
     private(set) var activeTurnID: String?
     private(set) var latestTurnID: String?
-    private(set) var selectedThreadID: String?
+    private(set) var selectedThreadID: String? {
+        didSet {
+            persist(selectedThreadID ?? "", forKey: StorageKey.selectedThreadID)
+        }
+    }
 
     private let urlSession: URLSession
     @ObservationIgnored private let userDefaults: UserDefaults
@@ -110,6 +115,12 @@ final class CodexV2PreviewClient {
             defaultValue: Defaults.prompt,
             userDefaults: userDefaults
         )
+        let storedSelectedThreadID = Self.storedValue(
+            forKey: StorageKey.selectedThreadID,
+            defaultValue: "",
+            userDefaults: userDefaults
+        )
+        selectedThreadID = storedSelectedThreadID.isEmpty ? nil : storedSelectedThreadID
     }
 
     func clear() {
@@ -383,6 +394,15 @@ private extension CodexV2PreviewClient {
         case let .threadListSnapshot(_, threads):
             if selectedThreadID == nil {
                 selectedThreadID = threads.first?.threadID
+            }
+
+            if let selectedThreadID,
+               threads.contains(where: { $0.threadID == selectedThreadID }) {
+                do {
+                    try await sendThreadCatchUp(task: task, threadID: selectedThreadID)
+                } catch {
+                    handleTransportFailure(error)
+                }
             }
         case .sessionReady, .reasoning, .assistantText:
             break
