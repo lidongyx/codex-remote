@@ -28,15 +28,22 @@ struct DaemonHealth {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let relay_http_url =
         std::env::var("RELAY_HTTP_URL").unwrap_or_else(|_| "http://127.0.0.1:9910".to_string());
     let relay_ws_base_url =
         std::env::var("RELAY_WS_BASE_URL").unwrap_or_else(|_| "ws://127.0.0.1:9910".to_string());
-    let daemon_health_url =
-        std::env::var("DAEMON_HEALTH_URL").unwrap_or_else(|_| "http://127.0.0.1:9911/health".to_string());
+    let daemon_health_url = std::env::var("DAEMON_HEALTH_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:9911/health".to_string());
+    let probe_prompt = std::env::var("PROBE_PROMPT")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Create a placeholder remote run.".to_string());
     let mac_device_id = match std::env::args().nth(1) {
         Some(value) => value,
         None => {
@@ -146,7 +153,7 @@ async fn main() -> Result<()> {
                             let run_start = ClientFrame {
                                 payload: Some(ClientPayload::RunStartRequest(RunStartRequest {
                                     thread_id: String::new(),
-                                    text: "Create a placeholder remote run.".to_string(),
+                                    text: probe_prompt.clone(),
                                     attachments: Vec::new(),
                                 })),
                             };

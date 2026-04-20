@@ -25,6 +25,7 @@ struct SettingsView: View {
                 SettingsGPTAccountCard()
                 SettingsBridgeVersionCard()
                 runtimeDefaultsSection
+                SettingsV2PreviewCard()
                 SettingsAboutCard()
                 SettingsUsageCard()
                 connectionSection
@@ -855,6 +856,45 @@ private struct SettingsAboutCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
+    }
+}
+
+private struct SettingsV2PreviewCard: View {
+    @State private var isShowingV2Preview = false
+
+    var body: some View {
+        SettingsCard(title: "Version 2.0") {
+            Text("Preview the relay-backed protobuf client chain inside the iOS app snapshot without touching the legacy chat flow.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            Button {
+                HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                isShowingV2Preview = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.horizontal.circle")
+                        .font(AppFont.subheadline(weight: .medium))
+                    Text("Open V2 Preview")
+                        .font(AppFont.subheadline(weight: .medium))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .foregroundStyle(.primary)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .fullScreenCover(isPresented: $isShowingV2Preview) {
+            CodexV2DebugView()
+        }
     }
 }
 

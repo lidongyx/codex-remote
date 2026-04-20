@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use codex_proto::run::RunStartRequest;
+use codex_proto::run::{RunInterruptRequest, RunStartRequest};
 use codex_proto::session::SessionReady;
 use codex_proto::thread::{ThreadCatchUpBatch, ThreadCatchUpRequest, ThreadListSnapshot};
 use codex_proto::transport::client_frame::Payload as ClientPayload;
@@ -54,7 +54,10 @@ impl RelayClient {
             if let Err(error) = self.run_once().await {
                 attempt = attempt.saturating_add(1);
                 let backoff = (attempt.min(10) as u64) * 2;
-                warn!("relay client loop failed: {error:#}; retrying in {}s", backoff.max(2));
+                warn!(
+                    "relay client loop failed: {error:#}; retrying in {}s",
+                    backoff.max(2)
+                );
                 sleep(Duration::from_secs(backoff.max(2))).await;
             } else {
                 attempt = 0;
@@ -114,7 +117,10 @@ impl RelayClient {
             }],
             ttl_seconds: 90,
         };
-        let refresh_url = format!("{}/v2/presence/register", relay_http_url.trim_end_matches('/'));
+        let refresh_url = format!(
+            "{}/v2/presence/register",
+            relay_http_url.trim_end_matches('/')
+        );
 
         let refresh_task = tokio::spawn(async move {
             let mut ticker = interval(Duration::from_secs(30));
@@ -182,7 +188,10 @@ impl RelayClient {
     }
 
     async fn register_presence(&self, relay_http_url: &str, session_id: &str) -> Result<()> {
-        let url = format!("{}/v2/presence/register", relay_http_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/v2/presence/register",
+            relay_http_url.trim_end_matches('/')
+        );
         let body = PresenceRegisterRequest {
             mac_device_id: self.trust_store.mac_device_id.clone(),
             relay_session_id: session_id.to_string(),
@@ -298,10 +307,28 @@ impl RelayClient {
                 let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
                 Ok(())
             }
-            ClientPayload::RunStartRequest(RunStartRequest { thread_id, text, .. }) => {
-                self.runtime_supervisor
-                    .start_placeholder_run(&thread_id, &text, outbound_tx.clone())
-                    .await;
+            ClientPayload::RunStartRequest(RunStartRequest {
+                thread_id, text, ..
+            }) => {
+                if let Err(error) = self
+                    .runtime_supervisor
+                    .start_run(&thread_id, &text, outbound_tx.clone())
+                    .await
+                {
+                    let response = ServerFrame {
+                        payload: Some(ServerPayload::Error(codex_proto::transport::ErrorFrame {
+                            code: "run_start_failed".to_string(),
+                            message: error.to_string(),
+                            retryable: false,
+                        })),
+                    };
+                    let mut encoded = Vec::new();
+                    response.encode(&mut encoded)?;
+                    let _ =
+                        outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
+                    return Ok(());
+                }
+
                 let (global_sequence, threads) = self.runtime_supervisor.thread_summaries().await;
                 let response = ServerFrame {
                     payload: Some(ServerPayload::ThreadListSnapshot(ThreadListSnapshot {
@@ -312,6 +339,26 @@ impl RelayClient {
                 let mut encoded = Vec::new();
                 response.encode(&mut encoded)?;
                 let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
+                Ok(())
+            }
+            ClientPayload::RunInterruptRequest(RunInterruptRequest { thread_id, turn_id }) => {
+                if !self
+                    .runtime_supervisor
+                    .interrupt_run(&thread_id, &turn_id, outbound_tx.clone())
+                    .await
+                {
+                    let response = ServerFrame {
+                        payload: Some(ServerPayload::Error(codex_proto::transport::ErrorFrame {
+                            code: "run_interrupt_failed".to_string(),
+                            message: "No matching active run was found.".to_string(),
+                            retryable: false,
+                        })),
+                    };
+                    let mut encoded = Vec::new();
+                    response.encode(&mut encoded)?;
+                    let _ =
+                        outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
+                }
                 Ok(())
             }
             _ => Ok(()),

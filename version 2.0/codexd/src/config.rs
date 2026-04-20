@@ -12,11 +12,16 @@ pub struct AppConfig {
     pub machine_name: String,
     pub health_bind_addr: SocketAddr,
     pub state_dir: PathBuf,
+    pub codex_command: String,
+    pub codex_workspace_root: PathBuf,
+    pub codex_model: Option<String>,
 }
 
 impl AppConfig {
     pub fn from_env() -> Result<Self> {
-        let relay_http_url = env::var("CODEXD_RELAY_HTTP_URL").ok().filter(|value| !value.trim().is_empty());
+        let relay_http_url = env::var("CODEXD_RELAY_HTTP_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         let relay_ws_base_url = env::var("CODEXD_RELAY_WS_BASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty());
@@ -32,6 +37,16 @@ impl AppConfig {
             .parse()
             .with_context(|| format!("invalid CODEXD_HEALTH_BIND_ADDR: {raw_health_bind_addr}"))?;
         let state_dir = resolve_state_dir()?;
+        let codex_command = env::var("CODEXD_CODEX_COMMAND")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "codex".to_string());
+        let codex_workspace_root = resolve_codex_workspace_root()?;
+        let codex_model = env::var("CODEXD_CODEX_MODEL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
 
         Ok(Self {
             relay_http_url,
@@ -40,6 +55,9 @@ impl AppConfig {
             machine_name,
             health_bind_addr,
             state_dir,
+            codex_command,
+            codex_workspace_root,
+            codex_model,
         })
     }
 }
@@ -47,12 +65,16 @@ impl AppConfig {
 fn default_machine_name() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        std::env::var("HOSTNAME").ok().filter(|value| !value.trim().is_empty())
+        std::env::var("HOSTNAME")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        std::env::var("HOSTNAME").ok().filter(|value| !value.trim().is_empty())
+        std::env::var("HOSTNAME")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
     }
 }
 
@@ -66,4 +88,15 @@ fn resolve_state_dir() -> Result<PathBuf> {
 
     let home_dir = dirs::home_dir().context("could not resolve home directory for codexd state")?;
     Ok(home_dir.join(".codex-remote-v2"))
+}
+
+fn resolve_codex_workspace_root() -> Result<PathBuf> {
+    if let Ok(raw) = env::var("CODEXD_WORKSPACE_ROOT") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
+    env::current_dir().context("could not resolve current working directory for codexd runtime")
 }
