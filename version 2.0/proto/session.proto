@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package codexremote.v2.session;
+
+message PairingBootstrap {
+  string pairing_token = 1;
+  string phone_device_id = 2;
+  string phone_public_key = 3;
+  string app_version = 4;
+}
+
+message PairingAccepted {
+  string mac_device_id = 1;
+  string mac_public_key = 2;
+  string machine_name = 3;
+  string relay_region = 4;
+}
+
+message SessionResumeRequest {
+  string mac_device_id = 1;
+  string phone_device_id = 2;
+  uint64 global_sequence = 3;
+  repeated ThreadCursor thread_cursors = 4;
+}
+
+message ThreadCursor {
+  string thread_id = 1;
+  uint64 sequence = 2;
+}
+
+message SessionReady {
+  string session_id = 1;
+  string connection_mode = 2;
+  uint64 global_sequence = 3;
+}
+
+message RouteCandidate {
+  string kind = 1;
+  string address = 2;
+  uint32 priority = 3;
+}
+
+message RouteProbe {
+  string session_id = 1;
+  repeated RouteCandidate candidates = 2;
+}
+
+message RouteDecision {
+  string session_id = 1;
+  string selected_kind = 2;
+  string selected_address = 3;
+  bool direct_upgrade_allowed = 4;
+}

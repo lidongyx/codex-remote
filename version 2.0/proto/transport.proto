@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package codexremote.v2.transport;
+
+import "session.proto";
+import "thread.proto";
+import "run.proto";
+
+message ClientFrame {
+  oneof payload {
+    codexremote.v2.session.PairingBootstrap pairing_bootstrap = 1;
+    codexremote.v2.session.SessionResumeRequest session_resume = 2;
+    codexremote.v2.session.RouteProbe route_probe = 3;
+    codexremote.v2.thread.ThreadListRequest thread_list_request = 10;
+    codexremote.v2.thread.ThreadCatchUpRequest thread_catchup_request = 11;
+    codexremote.v2.run.RunStartRequest run_start_request = 20;
+    codexremote.v2.run.RunInterruptRequest run_interrupt_request = 21;
+    Ack ack = 90;
+  }
+}
+
+message ServerFrame {
+  oneof payload {
+    codexremote.v2.session.PairingAccepted pairing_accepted = 1;
+    codexremote.v2.session.SessionReady session_ready = 2;
+    codexremote.v2.session.RouteDecision route_decision = 3;
+    codexremote.v2.thread.ThreadListSnapshot thread_list_snapshot = 10;
+    codexremote.v2.thread.ThreadCatchUpBatch thread_catchup_batch = 11;
+    codexremote.v2.run.RunEvent run_event = 20;
+    codexremote.v2.run.RunCompletion run_completion = 21;
+    ErrorFrame error = 98;
+    Ack ack = 99;
+  }
+}
+
+message Ack {
+  string stream_id = 1;
+  uint64 sequence = 2;
+}
+
+message ErrorFrame {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}

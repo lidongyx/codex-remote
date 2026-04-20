@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package codexremote.v2.thread;
+
+message ThreadListRequest {
+  uint64 since_global_sequence = 1;
+}
+
+message ThreadSummary {
+  string thread_id = 1;
+  string title = 2;
+  string preview = 3;
+  uint64 updated_at_ms = 4;
+  bool running = 5;
+}
+
+message ThreadListSnapshot {
+  uint64 global_sequence = 1;
+  repeated ThreadSummary threads = 2;
+}
+
+message ThreadCatchUpRequest {
+  string thread_id = 1;
+  uint64 since_thread_sequence = 2;
+}
+
+message ThreadCatchUpBatch {
+  string thread_id = 1;
+  uint64 latest_thread_sequence = 2;
+  repeated ThreadEvent events = 3;
+  bool has_more = 4;
+}
+
+message ThreadEvent {
+  uint64 sequence = 1;
+  oneof payload {
+    UserMessage user_message = 10;
+    AssistantDelta assistant_delta = 11;
+    ReasoningDelta reasoning_delta = 12;
+    ToolDelta tool_delta = 13;
+    StatusChanged status_changed = 14;
+  }
+}
+
+message UserMessage {
+  string turn_id = 1;
+  string text = 2;
+}
+
+message AssistantDelta {
+  string turn_id = 1;
+  string delta = 2;
+}
+
+message ReasoningDelta {
+  string turn_id = 1;
+  string item_id = 2;
+  string delta = 3;
+}
+
+message ToolDelta {
+  string turn_id = 1;
+  string call_id = 2;
+  string delta = 3;
+}
+
+message StatusChanged {
+  string turn_id = 1;
+  string status = 2;
+}

@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package codexremote.v2.run;
+
+message RunStartRequest {
+  string thread_id = 1;
+  string text = 2;
+  repeated InputAttachment attachments = 3;
+}
+
+message InputAttachment {
+  string kind = 1;
+  string name = 2;
+  bytes payload = 3;
+}
+
+message RunInterruptRequest {
+  string thread_id = 1;
+  string turn_id = 2;
+}
+
+message RunEvent {
+  string thread_id = 1;
+  string turn_id = 2;
+  uint64 global_sequence = 3;
+  oneof payload {
+    RunStarted started = 10;
+    ReasoningText reasoning = 11;
+    ToolCallStarted tool_started = 12;
+    ToolCallDelta tool_delta = 13;
+    AssistantText assistant_text = 14;
+  }
+}
+
+message RunStarted {
+  string model = 1;
+}
+
+message ReasoningText {
+  string item_id = 1;
+  string delta = 2;
+}
+
+message ToolCallStarted {
+  string call_id = 1;
+  string tool_name = 2;
+  string summary = 3;
+}
+
+message ToolCallDelta {
+  string call_id = 1;
+  string delta = 2;
+}
+
+message AssistantText {
+  string delta = 1;
+}
+
+message RunCompletion {
+  string thread_id = 1;
+  string turn_id = 2;
+  uint64 global_sequence = 3;
+  string result = 4;
+  string error_message = 5;
+}
