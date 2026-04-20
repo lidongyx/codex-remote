@@ -47,6 +47,14 @@ Already implemented:
 - `codexd` executable skeleton
 - relay-backed presence registration and session resolve
 - liveness-aware session invalidation when the Mac daemon disconnects
+- relay-backed protobuf application request / response flow
+- placeholder remote run lifecycle:
+  - session resume
+  - thread list
+  - run start
+  - reasoning delta
+  - assistant delta
+  - run completion
 
 Not implemented yet:
 
@@ -79,5 +87,6 @@ What this validates today:
 - daemon registered remote presence with the relay
 - relay can resolve the current live remote session for the daemon
 - a phone-side probe can connect through the relay and receive protobuf session responses
+- a phone-side probe can start a placeholder remote run and receive streamed run lifecycle events
 
 The scripts are for development only.

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use codex_proto::run::RunStartRequest;
 use codex_proto::session::SessionResumeRequest;
 use codex_proto::thread::ThreadListRequest;
 use codex_proto::transport::client_frame::Payload as ClientPayload;
@@ -100,6 +101,11 @@ async fn main() -> Result<()> {
 
     let mut saw_session_ready = false;
     let mut saw_thread_list = false;
+    let mut sent_run_start = false;
+    let mut saw_run_started = false;
+    let mut saw_reasoning = false;
+    let mut saw_assistant = false;
+    let mut saw_completion = false;
 
     while let Some(next) = websocket.next().await {
         let message = next?;
@@ -129,6 +135,83 @@ async fn main() -> Result<()> {
                             })
                         );
                         saw_thread_list = true;
+                        if !sent_run_start {
+                            let run_start = ClientFrame {
+                                payload: Some(ClientPayload::RunStartRequest(RunStartRequest {
+                                    thread_id: String::new(),
+                                    text: "Create a placeholder remote run.".to_string(),
+                                    attachments: Vec::new(),
+                                })),
+                            };
+                            let mut encoded = Vec::new();
+                            run_start.encode(&mut encoded)?;
+                            websocket
+                                .send(tokio_tungstenite::tungstenite::Message::Binary(encoded))
+                                .await?;
+                            sent_run_start = true;
+                        }
+                    }
+                    Some(ServerPayload::RunEvent(event)) => {
+                        match event.payload {
+                            Some(codex_proto::run::run_event::Payload::Started(started)) => {
+                                println!(
+                                    "{}",
+                                    serde_json::json!({
+                                        "type": "run_started",
+                                        "threadId": event.thread_id,
+                                        "turnId": event.turn_id,
+                                        "globalSequence": event.global_sequence,
+                                        "model": started.model,
+                                    })
+                                );
+                                saw_run_started = true;
+                            }
+                            Some(codex_proto::run::run_event::Payload::Reasoning(reasoning)) => {
+                                println!(
+                                    "{}",
+                                    serde_json::json!({
+                                        "type": "reasoning",
+                                        "threadId": event.thread_id,
+                                        "turnId": event.turn_id,
+                                        "globalSequence": event.global_sequence,
+                                        "itemId": reasoning.item_id,
+                                        "delta": reasoning.delta,
+                                    })
+                                );
+                                saw_reasoning = true;
+                            }
+                            Some(codex_proto::run::run_event::Payload::AssistantText(assistant)) => {
+                                println!(
+                                    "{}",
+                                    serde_json::json!({
+                                        "type": "assistant_text",
+                                        "threadId": event.thread_id,
+                                        "turnId": event.turn_id,
+                                        "globalSequence": event.global_sequence,
+                                        "delta": assistant.delta,
+                                    })
+                                );
+                                saw_assistant = true;
+                            }
+                            Some(other) => {
+                                println!("{}", serde_json::json!({ "type": "run_event_other", "payload": format!("{:?}", other) }));
+                            }
+                            None => {}
+                        }
+                    }
+                    Some(ServerPayload::RunCompletion(completion)) => {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "type": "run_completion",
+                                "threadId": completion.thread_id,
+                                "turnId": completion.turn_id,
+                                "globalSequence": completion.global_sequence,
+                                "result": completion.result,
+                                "errorMessage": completion.error_message,
+                            })
+                        );
+                        saw_completion = true;
                     }
                     Some(other) => {
                         println!("{}", serde_json::json!({ "type": "unexpected", "payload": format!("{:?}", other) }));
@@ -143,12 +226,16 @@ async fn main() -> Result<()> {
             _ => {}
         }
 
-        if saw_session_ready && saw_thread_list {
+        if saw_session_ready && saw_thread_list && saw_run_started && saw_reasoning && saw_assistant && saw_completion {
             break;
         }
     }
 
     anyhow::ensure!(saw_session_ready, "did not receive SessionReady");
     anyhow::ensure!(saw_thread_list, "did not receive ThreadListSnapshot");
+    anyhow::ensure!(saw_run_started, "did not receive RunStarted");
+    anyhow::ensure!(saw_reasoning, "did not receive Reasoning");
+    anyhow::ensure!(saw_assistant, "did not receive AssistantText");
+    anyhow::ensure!(saw_completion, "did not receive RunCompletion");
     Ok(())
 }

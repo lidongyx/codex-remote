@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use codex_proto::session::SessionReady;
 use codex_proto::thread::ThreadListSnapshot;
+use codex_proto::run::RunStartRequest;
 use codex_proto::transport::client_frame::Payload as ClientPayload;
 use codex_proto::transport::server_frame::Payload as ServerPayload;
 use codex_proto::transport::{ClientFrame, ServerFrame};
@@ -17,6 +18,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
+use crate::runtime_supervisor::RuntimeSupervisor;
 use crate::session_registry::SessionRegistry;
 use crate::trust_store::TrustStore;
 
@@ -26,15 +28,22 @@ pub struct RelayClient {
     config: AppConfig,
     trust_store: TrustStore,
     session_registry: SessionRegistry,
+    runtime_supervisor: RuntimeSupervisor,
 }
 
 impl RelayClient {
-    pub fn new(config: AppConfig, trust_store: TrustStore, session_registry: SessionRegistry) -> Self {
+    pub fn new(
+        config: AppConfig,
+        trust_store: TrustStore,
+        session_registry: SessionRegistry,
+        runtime_supervisor: RuntimeSupervisor,
+    ) -> Self {
         Self {
             http_client: Client::new(),
             config,
             trust_store,
             session_registry,
+            runtime_supervisor,
         }
     }
 
@@ -150,10 +159,12 @@ impl RelayClient {
                     if message.is_close() {
                         break;
                     }
-                    if let Some(response) = self.handle_incoming_message(&session_id, message) {
-                        if outbound_tx.send(response).is_err() {
-                            break;
-                        }
+                    if self
+                        .handle_incoming_message(&session_id, message, outbound_tx.clone())
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
                 Err(error) => {
@@ -202,19 +213,25 @@ impl RelayClient {
     }
 
     // Temporary mixed-mode surface while the binary protocol is being wired end to end.
-    fn handle_incoming_message(
+    async fn handle_incoming_message(
         &self,
         session_id: &str,
         message: tokio_tungstenite::tungstenite::Message,
-    ) -> Option<tokio_tungstenite::tungstenite::Message> {
+        outbound_tx: mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>,
+    ) -> Result<()> {
         match message {
             tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
-                self.handle_incoming_binary_frame(session_id, &bytes)
+                self.handle_incoming_binary_frame(session_id, &bytes, outbound_tx)
+                    .await?;
+                Ok(())
             }
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 let trimmed = text.trim();
                 if trimmed.eq_ignore_ascii_case("ping") {
-                    return Some(tokio_tungstenite::tungstenite::Message::Text("pong".into()));
+                    outbound_tx
+                        .send(tokio_tungstenite::tungstenite::Message::Text("pong".into()))
+                        .ok();
+                    return Ok(());
                 }
 
                 if trimmed.eq_ignore_ascii_case("session_info") {
@@ -226,24 +243,28 @@ impl RelayClient {
                         "daemonVersion": self.config.daemon_version,
                         "relayConnected": self.session_registry.relay_connected(),
                     });
-                    return Some(tokio_tungstenite::tungstenite::Message::Text(
-                        response.to_string().into(),
-                    ));
+                    outbound_tx
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            response.to_string().into(),
+                        ))
+                        .ok();
+                    return Ok(());
                 }
 
-                None
+                Ok(())
             }
-            _ => None,
+            _ => Ok(()),
         }
     }
 
-    fn handle_incoming_binary_frame(
+    async fn handle_incoming_binary_frame(
         &self,
         session_id: &str,
         bytes: &[u8],
-    ) -> Option<tokio_tungstenite::tungstenite::Message> {
-        let frame = ClientFrame::decode(bytes).ok()?;
-        match frame.payload? {
+        outbound_tx: mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>,
+    ) -> Result<()> {
+        let frame = ClientFrame::decode(bytes)?;
+        match frame.payload.context("missing client payload")? {
             ClientPayload::SessionResume(request) => {
                 let response = ServerFrame {
                     payload: Some(ServerPayload::SessionReady(SessionReady {
@@ -253,27 +274,48 @@ impl RelayClient {
                     })),
                 };
                 let mut encoded = Vec::new();
-                response.encode(&mut encoded).ok()?;
-                Some(tokio_tungstenite::tungstenite::Message::Binary(
-                    encoded,
-                ))
+                response.encode(&mut encoded)?;
+                outbound_tx
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(encoded))
+                    .ok();
+                Ok(())
             }
-            ClientPayload::ThreadListRequest(request) => {
+            ClientPayload::ThreadListRequest(_request) => {
+                let (global_sequence, threads) = self.runtime_supervisor.thread_summaries().await;
                 let response = ServerFrame {
                     payload: Some(ServerPayload::ThreadListSnapshot(
                         ThreadListSnapshot {
-                            global_sequence: request.since_global_sequence,
-                            threads: Vec::new(),
+                            global_sequence,
+                            threads,
                         },
                     )),
                 };
                 let mut encoded = Vec::new();
-                response.encode(&mut encoded).ok()?;
-                Some(tokio_tungstenite::tungstenite::Message::Binary(
-                    encoded,
-                ))
+                response.encode(&mut encoded)?;
+                outbound_tx
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(encoded))
+                    .ok();
+                Ok(())
             }
-            _ => None,
+            ClientPayload::RunStartRequest(RunStartRequest { thread_id, text, .. }) => {
+                self.runtime_supervisor
+                    .start_placeholder_run(&thread_id, &text, outbound_tx.clone())
+                    .await;
+                let (global_sequence, threads) = self.runtime_supervisor.thread_summaries().await;
+                let response = ServerFrame {
+                    payload: Some(ServerPayload::ThreadListSnapshot(
+                        ThreadListSnapshot {
+                            global_sequence,
+                            threads,
+                        },
+                    )),
+                };
+                let mut encoded = Vec::new();
+                response.encode(&mut encoded)?;
+                let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 }

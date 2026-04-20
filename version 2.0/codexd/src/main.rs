@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
             config.clone(),
             trust_store.clone(),
             session_registry.clone(),
+            runtime_supervisor.clone(),
         );
         tokio::spawn(async move {
             relay_client.run_forever().await;

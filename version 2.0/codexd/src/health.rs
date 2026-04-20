@@ -39,7 +39,7 @@ pub async fn run_server(state: HealthState) -> Result<()> {
                         "relayConfigured": shared_state.config.relay_ws_base_url.is_some() && shared_state.config.relay_http_url.is_some(),
                         "relayConnected": shared_state.session_registry.relay_connected(),
                         "lastPresenceRefreshEpochMs": shared_state.session_registry.last_presence_refresh_epoch_ms(),
-                        "codexProcessOnline": shared_state.runtime_supervisor.codex_process_online(),
+                        "codexProcessOnline": shared_state.runtime_supervisor.codex_process_online().await,
                         "activeSessions": shared_state.session_registry.active_sessions(),
                     }))
                 }
