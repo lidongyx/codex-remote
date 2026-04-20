@@ -81,6 +81,7 @@ public final class CodexRemoteV2Client {
 
         var frames: [V2ServerFrame] = []
         var sentRunStart = false
+        var sentCatchUp = false
 
         while true {
             let message = try await task.receive()
@@ -96,7 +97,14 @@ public final class CodexRemoteV2Client {
                     ))
                 }
 
-                if case .runCompletion = frame {
+                if case let .runCompletion(threadID, _, _, _, _) = frame, !sentCatchUp {
+                    sentCatchUp = true
+                    try await task.send(.data(
+                        V2ProtoCodec.makeThreadCatchUpRequestFrame(threadID: threadID)
+                    ))
+                }
+
+                if case .threadCatchUpBatch = frame {
                     task.cancel(with: .normalClosure, reason: nil)
                     return V2ProbeResult(
                         daemonHealth: daemonHealth,

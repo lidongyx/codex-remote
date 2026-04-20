@@ -47,6 +47,7 @@ public enum V2ServerFrame: Sendable {
     case reasoning(threadID: String, turnID: String, globalSequence: UInt64, itemID: String, delta: String)
     case assistantText(threadID: String, turnID: String, globalSequence: UInt64, delta: String)
     case runCompletion(threadID: String, turnID: String, globalSequence: UInt64, result: String, errorMessage: String)
+    case threadCatchUpBatch(threadID: String, latestThreadSequence: UInt64, eventCount: Int, hasMore: Bool)
     case error(code: String, message: String, retryable: Bool)
 }
 

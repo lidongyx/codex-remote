@@ -49,6 +49,20 @@ enum V2ProtoCodec {
             .build()
     }
 
+    static func makeThreadCatchUpRequestFrame(
+        threadID: String,
+        sinceThreadSequence: UInt64 = 0
+    ) -> Data {
+        let inner = V2ProtoWriter()
+            .string(field: 1, value: threadID)
+            .uint64(field: 2, value: sinceThreadSequence)
+            .build()
+
+        return V2ProtoWriter()
+            .message(field: 11, payload: inner)
+            .build()
+    }
+
     static func decodeServerFrame(_ data: Data) throws -> V2ServerFrame {
         var reader = V2ProtoReader(data: data)
         guard let topLevel = try reader.nextField() else {
@@ -60,6 +74,8 @@ enum V2ProtoCodec {
             return try decodeSessionReady(topLevel.payload)
         case (10, .lengthDelimited):
             return try decodeThreadListSnapshot(topLevel.payload)
+        case (11, .lengthDelimited):
+            return try decodeThreadCatchUpBatch(topLevel.payload)
         case (20, .lengthDelimited):
             return try decodeRunEvent(topLevel.payload)
         case (21, .lengthDelimited):
@@ -206,6 +222,31 @@ enum V2ProtoCodec {
             globalSequence: globalSequence,
             result: result,
             errorMessage: errorMessage
+        )
+    }
+
+    private static func decodeThreadCatchUpBatch(_ data: Data) throws -> V2ServerFrame {
+        var reader = V2ProtoReader(data: data)
+        var threadID = ""
+        var latestThreadSequence: UInt64 = 0
+        var eventCount = 0
+        var hasMore = false
+
+        while let field = try reader.nextField() {
+            switch (field.fieldNumber, field.wireType) {
+            case (1, .lengthDelimited): threadID = field.payload.stringValue
+            case (2, .varint): latestThreadSequence = field.varintValue
+            case (3, .lengthDelimited): eventCount += 1
+            case (4, .varint): hasMore = field.varintValue != 0
+            default: break
+            }
+        }
+
+        return .threadCatchUpBatch(
+            threadID: threadID,
+            latestThreadSequence: latestThreadSequence,
+            eventCount: eventCount,
+            hasMore: hasMore
         )
     }
 

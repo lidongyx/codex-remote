@@ -98,6 +98,14 @@ private extension V2ServerFrame {
                 "result": result,
                 "errorMessage": errorMessage,
             ]
+        case let .threadCatchUpBatch(threadID, latestThreadSequence, eventCount, hasMore):
+            return [
+                "type": "thread_catch_up_batch",
+                "threadId": threadID,
+                "latestThreadSequence": latestThreadSequence,
+                "eventCount": eventCount,
+                "hasMore": hasMore,
+            ]
         case let .error(code, message, retryable):
             return [
                 "type": "error",
