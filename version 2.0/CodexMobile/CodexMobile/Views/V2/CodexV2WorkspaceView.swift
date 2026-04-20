@@ -21,7 +21,7 @@ private struct CodexV2WorkspaceEntry: Identifiable {
 
 struct CodexV2WorkspaceView: View {
     @Environment(CodexService.self) private var codex
-    @State private var client = CodexV2PreviewClient()
+    @Environment(CodexV2PreviewClient.self) private var client
     @State private var didApplySuggestedConnection = false
     @FocusState private var isPromptFocused: Bool
 
@@ -231,7 +231,7 @@ struct CodexV2WorkspaceView: View {
 
     private var composerBar: some View {
         VStack(spacing: 12) {
-            TextField("Ask `codexd` to do something…", text: $client.prompt, axis: .vertical)
+            TextField("Ask `codexd` to do something…", text: promptBinding, axis: .vertical)
                 .focused($isPromptFocused)
                 .lineLimit(2...5)
                 .textInputAutocapitalization(.sentences)
@@ -426,5 +426,12 @@ struct CodexV2WorkspaceView: View {
         case .error:
             return .red
         }
+    }
+
+    private var promptBinding: Binding<String> {
+        Binding(
+            get: { client.prompt },
+            set: { client.prompt = $0 }
+        )
     }
 }

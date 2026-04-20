@@ -11,17 +11,20 @@ struct CodexMobileApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppLanguage.storageKey) private var appLanguageRawValue = AppLanguage.defaultStoredRawValue
     @State private var codexService: CodexService
+    @State private var codexV2Client: CodexV2PreviewClient
 
     init() {
         let service = CodexService()
         service.configureNotifications()
         _codexService = State(initialValue: service)
+        _codexV2Client = State(initialValue: CodexV2PreviewClient())
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(codexService)
+                .environment(codexV2Client)
                 .environment(\.locale, selectedAppLanguage.locale)
                 .onOpenURL { url in
                     Task { @MainActor in

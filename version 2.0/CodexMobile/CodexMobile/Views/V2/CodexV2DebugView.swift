@@ -7,8 +7,8 @@ import SwiftUI
 
 struct CodexV2DebugView: View {
     @Environment(CodexService.self) private var codex
+    @Environment(CodexV2PreviewClient.self) private var client
     @Environment(\.dismiss) private var dismiss
-    @State private var client = CodexV2PreviewClient()
 
     var body: some View {
         NavigationStack {
@@ -54,27 +54,27 @@ struct CodexV2DebugView: View {
                 client.resetConnectionFieldsToLocalDefaults()
             }
 
-            TextField("Relay HTTP URL", text: $client.relayHTTPBaseURLString)
+            TextField("Relay HTTP URL", text: relayHTTPURLBinding)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(AppFont.mono(.caption))
 
-            TextField("Relay WS URL", text: $client.relayWSBaseURLString)
+            TextField("Relay WS URL", text: relayWSURLBinding)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(AppFont.mono(.caption))
 
-            TextField("Daemon Health URL", text: $client.daemonHealthURLString)
+            TextField("Daemon Health URL", text: daemonHealthURLBinding)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(AppFont.mono(.caption))
 
-            TextField("Mac Device ID Override", text: $client.macDeviceIDOverride)
+            TextField("Mac Device ID Override", text: macDeviceIDBinding)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(AppFont.mono(.caption))
 
-            TextField("Prompt", text: $client.prompt, axis: .vertical)
+            TextField("Prompt", text: promptBinding, axis: .vertical)
                 .lineLimit(2...5)
 
             if client.isConnected {
@@ -264,6 +264,41 @@ struct CodexV2DebugView: View {
         codex.trustedPairPresentation?.deviceId
             ?? codex.normalizedRelayMacDeviceId
             ?? codex.normalizedLastTrustedMacDeviceId
+    }
+
+    private var relayHTTPURLBinding: Binding<String> {
+        Binding(
+            get: { client.relayHTTPBaseURLString },
+            set: { client.relayHTTPBaseURLString = $0 }
+        )
+    }
+
+    private var relayWSURLBinding: Binding<String> {
+        Binding(
+            get: { client.relayWSBaseURLString },
+            set: { client.relayWSBaseURLString = $0 }
+        )
+    }
+
+    private var daemonHealthURLBinding: Binding<String> {
+        Binding(
+            get: { client.daemonHealthURLString },
+            set: { client.daemonHealthURLString = $0 }
+        )
+    }
+
+    private var macDeviceIDBinding: Binding<String> {
+        Binding(
+            get: { client.macDeviceIDOverride },
+            set: { client.macDeviceIDOverride = $0 }
+        )
+    }
+
+    private var promptBinding: Binding<String> {
+        Binding(
+            get: { client.prompt },
+            set: { client.prompt = $0 }
+        )
     }
 }
 

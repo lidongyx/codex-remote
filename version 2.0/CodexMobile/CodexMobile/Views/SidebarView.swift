@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(CodexService.self) private var codex
+    @Environment(CodexV2PreviewClient.self) private var codexV2
     @Environment(\.colorScheme) private var colorScheme
 
     @Binding var selectedThread: CodexThread?
@@ -67,6 +68,23 @@ struct SidebarView: View {
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
+
+                if filteredV2Threads.isEmpty {
+                    SidebarV2WorkspaceSummary(
+                        isConnected: codexV2.isConnected,
+                        threadCount: codexV2.timeline.threadSummaries.count
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+                } else {
+                    SidebarV2ThreadSection(
+                        threads: filteredV2Threads,
+                        selectedThreadID: codexV2.selectedThreadID,
+                        onSelectThread: handleOpenV2Thread
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+                }
             }
 
             SidebarThreadListView(
@@ -143,6 +161,11 @@ struct SidebarView: View {
         .onChange(of: searchText) { _, _ in
             debugSidebarLog("search changed queryLength=\(searchText.count)")
             rebuildGroupedThreads()
+        }
+        .onChange(of: codexV2.timeline.threadSummaries) { _, _ in
+            debugSidebarLog(
+                "v2 threads changed count=\(codexV2.timeline.threadSummaries.count) connected=\(codexV2.isConnected)"
+            )
         }
         .onChange(of: diffFingerprint) { _, _ in
             debugSidebarLog("diff fingerprint changed visible=\(isVisible)")
@@ -321,6 +344,14 @@ struct SidebarView: View {
         onOpenV2Workspace()
     }
 
+    private func handleOpenV2Thread(_ thread: CodexV2ThreadSummary) {
+        searchText = ""
+        Task { @MainActor in
+            await codexV2.selectThread(thread.threadID)
+            onOpenV2Workspace()
+        }
+    }
+
     // Archives every live chat in the selected project group and clears the current selection if needed.
     private func archivePendingProjectGroup() {
         guard let group = projectGroupPendingArchive else { return }
@@ -470,6 +501,19 @@ struct SidebarView: View {
         sidebarDebugSequence += 1
         print("[SidebarData] #\(sidebarDebugSequence) \(message)")
     }
+
+    private var filteredV2Threads: [CodexV2ThreadSummary] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return codexV2.timeline.threadSummaries
+        }
+
+        return codexV2.timeline.threadSummaries.filter { thread in
+            thread.title.localizedCaseInsensitiveContains(query)
+                || thread.preview.localizedCaseInsensitiveContains(query)
+                || thread.threadID.localizedCaseInsensitiveContains(query)
+        }
+    }
 }
 
 private struct SidebarV2WorkspaceButton: View {
@@ -504,6 +548,77 @@ private struct SidebarV2WorkspaceButton: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SidebarV2WorkspaceSummary: View {
+    let isConnected: Bool
+    let threadCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(isConnected ? "V2 connected" : "V2 not connected")
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(threadCount == 0
+                 ? "Open the V2 workspace and tap Refresh to load threads."
+                 : "\(threadCount) V2 threads cached.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SidebarV2ThreadSection: View {
+    let threads: [CodexV2ThreadSummary]
+    let selectedThreadID: String?
+    let onSelectThread: (CodexV2ThreadSummary) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("V2 Threads")
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(threads, id: \.threadID) { thread in
+                Button {
+                    onSelectThread(thread)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(thread.title.isEmpty ? "Untitled Thread" : thread.title)
+                                .font(AppFont.subheadline(weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer()
+                            if thread.isRunning {
+                                Text("Running")
+                                    .font(AppFont.caption(weight: .semibold))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+
+                        if !thread.preview.isEmpty {
+                            Text(thread.preview)
+                                .font(AppFont.caption())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(selectedThreadID == thread.threadID ? Color(.secondarySystemFill) : Color.primary.opacity(0.04))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 
