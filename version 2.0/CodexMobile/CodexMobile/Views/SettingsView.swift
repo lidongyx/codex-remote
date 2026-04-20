@@ -8,6 +8,7 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(CodexService.self) private var codex
+    @Environment(CodexV2PreviewClient.self) private var codexV2
 
     @AppStorage("codex.appFontStyle") private var appFontStyleRawValue = AppFont.defaultStoredStyleRawValue
     @State private var isShowingMacNameSheet = false
@@ -25,10 +26,11 @@ struct SettingsView: View {
                 SettingsGPTAccountCard()
                 SettingsBridgeVersionCard()
                 runtimeDefaultsSection
-                SettingsV2PreviewCard()
+                SettingsV2WorkspaceCard()
+                SettingsV2TestingCard()
                 SettingsAboutCard()
                 SettingsUsageCard()
-                connectionSection
+                legacyConnectionSection
             }
             .padding()
         }
@@ -129,8 +131,12 @@ struct SettingsView: View {
 
     // MARK: - Connection
 
-    @ViewBuilder private var connectionSection: some View {
-        SettingsCard(title: "Connection") {
+    @ViewBuilder private var legacyConnectionSection: some View {
+        SettingsCard(title: "Legacy Bridge") {
+            Text("The current shipping connection path uses the legacy bridge, saved relay pairing, and QR/manual pairing flows.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
             if let trustedPairPresentation = codex.trustedPairPresentation {
                 SettingsTrustedMacCard(
                     presentation: trustedPairPresentation,
@@ -859,14 +865,14 @@ private struct SettingsAboutCard: View {
     }
 }
 
-private struct SettingsV2PreviewCard: View {
+private struct SettingsV2WorkspaceCard: View {
+    @Environment(CodexV2PreviewClient.self) private var codexV2
     @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
-    @State private var isShowingV2Preview = false
     @State private var isShowingV2Workspace = false
 
     var body: some View {
         SettingsCard(title: "Version 2.0") {
-            Text("Expose the new `codexd` + V2 relay path inside the main app while keeping the current bridge workflow available beside it.")
+            Text("The new path runs through `codexd` and the V2 relay. It stays separate from the legacy bridge so users can choose when to switch.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 
@@ -874,19 +880,37 @@ private struct SettingsV2PreviewCard: View {
                 .tint(Color(.plan))
 
             Text(v2WorkspaceEnabled
-                 ? "The sidebar and home screen will show a Version 2.0 workspace entry."
+                 ? "The sidebar and home screen will show a Version 2.0 workspace entry beside the legacy flow."
                  : "The main app will stay on the legacy bridge flow only.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 
+            Divider()
+
+            HStack(spacing: 8) {
+                SettingsStatusPill(label: codexV2.isConnected ? "Connected" : (codexV2.isConnecting ? "Connecting" : "Disconnected"))
+                SettingsStatusPill(label: "V2")
+                if let runtimeMode = codexV2.daemonHealth?.runtimeMode,
+                   !runtimeMode.isEmpty {
+                    SettingsStatusPill(label: runtimeMode)
+                }
+            }
+
+            if let workspaceRoot = codexV2.daemonHealth?.workspaceRoot,
+               !workspaceRoot.isEmpty {
+                Text(workspaceRoot)
+                    .font(AppFont.mono(.caption))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } else {
+                Text("Open the V2 workspace to connect, refresh threads, and validate the new stack.")
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
+
             SettingsButton("Open V2 Workspace") {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
                 isShowingV2Workspace = true
-            }
-
-            SettingsButton("Open V2 Debug") {
-                HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                isShowingV2Preview = true
             }
         }
         .fullScreenCover(isPresented: $isShowingV2Workspace) {
@@ -898,7 +922,32 @@ private struct SettingsV2PreviewCard: View {
                                 isShowingV2Workspace = false
                             }
                         }
-                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SettingsV2TestingCard: View {
+    @Environment(CodexV2PreviewClient.self) private var codexV2
+    @State private var isShowingV2Preview = false
+
+    var body: some View {
+        SettingsCard(title: "Testing & Debug") {
+            Text("These tools are for validating and troubleshooting the V2 transport. They are intentionally separate from the user-facing workspace entry.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                SettingsStatusPill(label: codexV2.isConnected ? "V2 live" : "V2 idle")
+                if !codexV2.timeline.threadSummaries.isEmpty {
+                    SettingsStatusPill(label: "\(codexV2.timeline.threadSummaries.count) threads")
+                }
+            }
+
+            SettingsButton("Open V2 Debug") {
+                HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                isShowingV2Preview = true
             }
         }
         .fullScreenCover(isPresented: $isShowingV2Preview) {
@@ -1106,5 +1155,6 @@ private struct SettingsMacNameSheet: View {
     NavigationStack {
         SettingsView()
             .environment(CodexService())
+            .environment(CodexV2PreviewClient())
     }
 }
