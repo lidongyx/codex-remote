@@ -6,6 +6,26 @@
 import Foundation
 import Observation
 
+enum CodexV2PreviewClientError: LocalizedError {
+    case invalidURL(String)
+    case invalidHTTPResponse
+    case unexpectedHTTPStatus(code: Int, body: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL(let message):
+            return message
+        case .invalidHTTPResponse:
+            return "The V2 relay returned an invalid HTTP response."
+        case .unexpectedHTTPStatus(let code, let body):
+            if body.isEmpty {
+                return "The V2 relay returned HTTP \(code)."
+            }
+            return "The V2 relay returned HTTP \(code): \(body)"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class CodexV2PreviewClient {
@@ -50,6 +70,7 @@ final class CodexV2PreviewClient {
     private(set) var activeThreadID: String?
     private(set) var activeTurnID: String?
     private(set) var latestTurnID: String?
+    private(set) var selectedThreadID: String?
 
     private let urlSession: URLSession
     @ObservationIgnored private let userDefaults: UserDefaults
@@ -97,6 +118,7 @@ final class CodexV2PreviewClient {
         activeThreadID = nil
         activeTurnID = nil
         latestTurnID = nil
+        selectedThreadID = nil
     }
 
     func resetConnectionFieldsToLocalDefaults() {
@@ -170,6 +192,24 @@ final class CodexV2PreviewClient {
         }
     }
 
+    func selectThread(_ threadID: String) async {
+        let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedThreadID.isEmpty else { return }
+
+        selectedThreadID = normalizedThreadID
+        activeThreadID = normalizedThreadID
+
+        guard let task = webSocketTask, isConnected else {
+            return
+        }
+
+        do {
+            try await sendThreadCatchUp(task: task, threadID: normalizedThreadID)
+        } catch {
+            handleTransportFailure(error)
+        }
+    }
+
     func sendPrompt() async {
         if !isConnected {
             await connect()
@@ -197,7 +237,7 @@ final class CodexV2PreviewClient {
             try await sendRunStart(
                 task: task,
                 prompt: trimmedPrompt,
-                threadID: timeline.latestThreadID ?? activeThreadID ?? ""
+                threadID: selectedThreadID ?? timeline.latestThreadID ?? activeThreadID ?? ""
             )
         } catch {
             handleTransportFailure(error)
@@ -224,11 +264,11 @@ private extension CodexV2PreviewClient {
         guard let daemonHealthURL = URL(
             string: daemonHealthURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         ) else {
-            throw URLError(.badURL)
+            throw CodexV2PreviewClientError.invalidURL("The daemon health URL is invalid.")
         }
 
         let (data, response) = try await urlSession.data(from: daemonHealthURL)
-        try validateHTTP(response)
+        try validateHTTP(response, data: data)
         return try JSONDecoder().decode(CodexV2DaemonHealthSnapshot.self, from: data)
     }
 
@@ -237,7 +277,7 @@ private extension CodexV2PreviewClient {
         macDeviceID: String,
         phoneDeviceID: String
     ) async throws -> CodexV2SessionResolveResponse {
-        let url = relayHTTPBaseURL.appending(path: "v2/session/resolve")
+        let url = try appendingPathSegments(["v2", "session", "resolve"], to: relayHTTPBaseURL)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -247,7 +287,7 @@ private extension CodexV2PreviewClient {
         ])
 
         let (data, response) = try await urlSession.data(for: request)
-        try validateHTTP(response)
+        try validateHTTP(response, data: data)
         return try JSONDecoder().decode(CodexV2SessionResolveResponse.self, from: data)
     }
 
@@ -260,7 +300,7 @@ private extension CodexV2PreviewClient {
         let relayWSBaseURL = URL(
             string: relayWSBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         ) else {
-            throw URLError(.badURL)
+            throw CodexV2PreviewClientError.invalidURL("The relay base URLs are invalid.")
         }
 
         let daemonHealth = try await fetchDaemonHealth()
@@ -272,13 +312,11 @@ private extension CodexV2PreviewClient {
             phoneDeviceID: phoneDeviceID
         )
 
-        let websocketURL = relayWSBaseURL
-            .appending(path: "v2/ws")
-            .appending(path: resolvedSession.relaySessionID)
-            .appending(queryItems: [
-                URLQueryItem(name: "role", value: "phone"),
-                URLQueryItem(name: "device_id", value: phoneDeviceID),
-            ])
+        let websocketURL = try makeRelayWebSocketURL(
+            baseURL: relayWSBaseURL,
+            sessionID: resolvedSession.relaySessionID,
+            phoneDeviceID: phoneDeviceID
+        )
 
         return CodexV2ResolvedConnection(
             daemonHealth: daemonHealth,
@@ -322,11 +360,13 @@ private extension CodexV2PreviewClient {
         switch frame {
         case let .runStarted(threadID, turnID, _, _):
             activeThreadID = threadID
+            selectedThreadID = threadID
             activeTurnID = turnID
             latestTurnID = turnID
             isRunning = true
         case let .runCompletion(threadID, turnID, _, _, _):
             activeThreadID = threadID
+            selectedThreadID = threadID
             activeTurnID = nil
             latestTurnID = turnID
             isRunning = false
@@ -337,9 +377,14 @@ private extension CodexV2PreviewClient {
             }
         case let .threadCatchUpBatch(threadID, _, _, _):
             activeThreadID = threadID
+            selectedThreadID = threadID
         case let .error(_, message, _):
             lastErrorMessage = message
-        case .sessionReady, .threadListSnapshot, .reasoning, .assistantText:
+        case let .threadListSnapshot(_, threads):
+            if selectedThreadID == nil {
+                selectedThreadID = threads.first?.threadID
+            }
+        case .sessionReady, .reasoning, .assistantText:
             break
         }
     }
@@ -428,8 +473,12 @@ private extension CodexV2PreviewClient {
         switch frame {
         case .sessionReady:
             next.didReceiveSessionReady = true
-        case .threadListSnapshot:
+        case let .threadListSnapshot(_, threads):
             next.didReceiveThreadList = true
+            next.threadSummaries = threads
+            if next.latestThreadID == nil {
+                next.latestThreadID = threads.first?.threadID
+            }
         case let .runStarted(threadID, _, _, _):
             next.latestThreadID = threadID
             next.didReceiveRunCompletion = false
@@ -461,9 +510,23 @@ private extension CodexV2PreviewClient {
     }
 
     func validateHTTP(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
+        try validateHTTP(response, data: nil)
+    }
+
+    func validateHTTP(_ response: URLResponse, data: Data?) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw CodexV2PreviewClientError.invalidHTTPResponse
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let body = data.flatMap { data in
+                String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } ?? ""
+            throw CodexV2PreviewClientError.unexpectedHTTPStatus(
+                code: http.statusCode,
+                body: body
+            )
         }
     }
 
@@ -530,6 +593,49 @@ private extension CodexV2PreviewClient {
         default:
             return "ws"
         }
+    }
+
+    func appendingPathSegments(_ segments: [String], to baseURL: URL) throws -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw CodexV2PreviewClientError.invalidURL("The relay URL could not be parsed.")
+        }
+
+        let baseSegments = components.path
+            .split(separator: "/")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let mergedSegments = baseSegments + segments
+        components.path = "/" + mergedSegments.joined(separator: "/")
+        components.query = nil
+        components.fragment = nil
+
+        guard let url = components.url else {
+            throw CodexV2PreviewClientError.invalidURL("The relay URL could not be built.")
+        }
+
+        return url
+    }
+
+    func makeRelayWebSocketURL(
+        baseURL: URL,
+        sessionID: String,
+        phoneDeviceID: String
+    ) throws -> URL {
+        let sessionURL = try appendingPathSegments(["v2", "ws", sessionID], to: baseURL)
+        guard var components = URLComponents(url: sessionURL, resolvingAgainstBaseURL: false) else {
+            throw CodexV2PreviewClientError.invalidURL("The V2 websocket URL could not be parsed.")
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "role", value: "phone"),
+            URLQueryItem(name: "device_id", value: phoneDeviceID),
+        ]
+
+        guard let url = components.url else {
+            throw CodexV2PreviewClientError.invalidURL("The V2 websocket URL could not be built.")
+        }
+
+        return url
     }
 }
 

@@ -51,9 +51,17 @@ struct CodexV2SessionResolveResponse: Decodable, Sendable {
     }
 }
 
+struct CodexV2ThreadSummary: Sendable, Hashable {
+    let threadID: String
+    let title: String
+    let preview: String
+    let updatedAtMs: UInt64
+    let isRunning: Bool
+}
+
 enum CodexV2ServerFrame: Sendable {
     case sessionReady(sessionID: String, connectionMode: String, globalSequence: UInt64)
-    case threadListSnapshot(globalSequence: UInt64, threadCount: Int)
+    case threadListSnapshot(globalSequence: UInt64, threads: [CodexV2ThreadSummary])
     case runStarted(threadID: String, turnID: String, globalSequence: UInt64, model: String)
     case reasoning(threadID: String, turnID: String, globalSequence: UInt64, itemID: String, delta: String)
     case assistantText(threadID: String, turnID: String, globalSequence: UInt64, delta: String)
@@ -72,6 +80,7 @@ struct CodexV2ResolvedConnection: Sendable {
 
 struct CodexV2TimelineState: Sendable {
     var frames: [CodexV2ServerFrame]
+    var threadSummaries: [CodexV2ThreadSummary]
     var latestThreadID: String?
     var didReceiveSessionReady: Bool
     var didReceiveThreadList: Bool
@@ -80,6 +89,7 @@ struct CodexV2TimelineState: Sendable {
 
     init(
         frames: [CodexV2ServerFrame] = [],
+        threadSummaries: [CodexV2ThreadSummary] = [],
         latestThreadID: String? = nil,
         didReceiveSessionReady: Bool = false,
         didReceiveThreadList: Bool = false,
@@ -87,6 +97,7 @@ struct CodexV2TimelineState: Sendable {
         didReceiveCatchUpBatch: Bool = false
     ) {
         self.frames = frames
+        self.threadSummaries = threadSummaries
         self.latestThreadID = latestThreadID
         self.didReceiveSessionReady = didReceiveSessionReady
         self.didReceiveThreadList = didReceiveThreadList

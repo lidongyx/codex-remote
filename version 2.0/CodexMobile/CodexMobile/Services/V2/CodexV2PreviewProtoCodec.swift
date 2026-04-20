@@ -128,17 +128,46 @@ enum CodexV2PreviewProtoCodec {
     private static func decodeThreadListSnapshot(_ data: Data) throws -> CodexV2ServerFrame {
         var reader = CodexV2ProtoReader(data: data)
         var globalSequence: UInt64 = 0
-        var threadCount = 0
+        var threads: [CodexV2ThreadSummary] = []
 
         while let field = try reader.nextField() {
             switch (field.fieldNumber, field.wireType) {
             case (1, .varint): globalSequence = field.varintValue
-            case (2, .lengthDelimited): threadCount += 1
+            case (2, .lengthDelimited):
+                threads.append(try decodeThreadSummary(field.payload))
             default: break
             }
         }
 
-        return .threadListSnapshot(globalSequence: globalSequence, threadCount: threadCount)
+        return .threadListSnapshot(globalSequence: globalSequence, threads: threads)
+    }
+
+    private static func decodeThreadSummary(_ data: Data) throws -> CodexV2ThreadSummary {
+        var reader = CodexV2ProtoReader(data: data)
+        var threadID = ""
+        var title = ""
+        var preview = ""
+        var updatedAtMs: UInt64 = 0
+        var isRunning = false
+
+        while let field = try reader.nextField() {
+            switch (field.fieldNumber, field.wireType) {
+            case (1, .lengthDelimited): threadID = field.payload.stringValue
+            case (2, .lengthDelimited): title = field.payload.stringValue
+            case (3, .lengthDelimited): preview = field.payload.stringValue
+            case (4, .varint): updatedAtMs = field.varintValue
+            case (5, .varint): isRunning = field.varintValue != 0
+            default: break
+            }
+        }
+
+        return CodexV2ThreadSummary(
+            threadID: threadID,
+            title: title,
+            preview: preview,
+            updatedAtMs: updatedAtMs,
+            isRunning: isRunning
+        )
     }
 
     private static func decodeRunEvent(_ data: Data) throws -> CodexV2ServerFrame {

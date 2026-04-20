@@ -30,6 +30,7 @@ struct CodexV2WorkspaceView: View {
             VStack(spacing: 20) {
                 heroCard
                 statusCard
+                threadsCard
                 transcriptCard
             }
             .padding()
@@ -178,6 +179,56 @@ struct CodexV2WorkspaceView: View {
         }
     }
 
+    private var threadsCard: some View {
+        SettingsCard(title: "Threads") {
+            if client.timeline.threadSummaries.isEmpty {
+                Text("No V2 threads loaded yet. Tap Refresh after connecting.")
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(client.timeline.threadSummaries, id: \.threadID) { thread in
+                    Button {
+                        Task { @MainActor in
+                            await client.selectThread(thread.threadID)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Text(thread.title.isEmpty ? "Untitled Thread" : thread.title)
+                                    .font(AppFont.subheadline(weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer()
+                                if thread.isRunning {
+                                    statusChip(title: "Running", tint: .orange)
+                                }
+                            }
+
+                            if !thread.preview.isEmpty {
+                                Text(thread.preview)
+                                    .font(AppFont.caption())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(selectedThreadMatches(thread) ? Color(.secondarySystemFill) : Color.primary.opacity(0.04))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    if thread.threadID != client.timeline.threadSummaries.last?.threadID {
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
     private var composerBar: some View {
         VStack(spacing: 12) {
             TextField("Ask `codexd` to do something…", text: $client.prompt, axis: .vertical)
@@ -222,6 +273,7 @@ struct CodexV2WorkspaceView: View {
         client.timeline.frames.enumerated().compactMap { index, frame in
             switch frame {
             case let .assistantText(_, _, _, delta):
+                guard frameBelongsToSelectedThread(frame) else { return nil }
                 let body = delta.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !body.isEmpty else { return nil }
                 return CodexV2WorkspaceEntry(
@@ -231,6 +283,7 @@ struct CodexV2WorkspaceView: View {
                     body: body
                 )
             case let .reasoning(_, _, _, _, delta):
+                guard frameBelongsToSelectedThread(frame) else { return nil }
                 let body = delta.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !body.isEmpty else { return nil }
                 return CodexV2WorkspaceEntry(
@@ -240,6 +293,7 @@ struct CodexV2WorkspaceView: View {
                     body: body
                 )
             case let .runStarted(_, _, _, model):
+                guard frameBelongsToSelectedThread(frame) else { return nil }
                 return CodexV2WorkspaceEntry(
                     id: "started-\(index)",
                     role: .system,
@@ -247,6 +301,7 @@ struct CodexV2WorkspaceView: View {
                     body: "Model: \(model)"
                 )
             case let .runCompletion(_, _, _, result, errorMessage):
+                guard frameBelongsToSelectedThread(frame) else { return nil }
                 let body = errorMessage.isEmpty ? "Result: \(result)" : "Result: \(result)\n\(errorMessage)"
                 return CodexV2WorkspaceEntry(
                     id: "completion-\(index)",
@@ -268,14 +323,15 @@ struct CodexV2WorkspaceView: View {
                     title: "Session Ready",
                     body: "\(connectionMode) · \(sessionID)"
                 )
-            case let .threadListSnapshot(_, threadCount):
+            case let .threadListSnapshot(_, threads):
                 return CodexV2WorkspaceEntry(
                     id: "thread-list-\(index)",
                     role: .system,
                     title: "Thread List",
-                    body: "\(threadCount) threads visible"
+                    body: "\(threads.count) threads visible"
                 )
             case let .threadCatchUpBatch(threadID, latestThreadSequence, eventCount, hasMore):
+                guard frameBelongsToSelectedThread(frame) else { return nil }
                 return CodexV2WorkspaceEntry(
                     id: "catchup-\(index)",
                     role: .system,
@@ -322,6 +378,28 @@ struct CodexV2WorkspaceView: View {
 
     private func yesNo(_ value: Bool) -> String {
         value ? "Yes" : "No"
+    }
+
+    private func selectedThreadMatches(_ thread: CodexV2ThreadSummary) -> Bool {
+        let selectedThreadID = client.selectedThreadID ?? client.timeline.latestThreadID
+        return selectedThreadID == thread.threadID
+    }
+
+    private func frameBelongsToSelectedThread(_ frame: CodexV2ServerFrame) -> Bool {
+        guard let selectedThreadID = client.selectedThreadID ?? client.timeline.latestThreadID else {
+            return true
+        }
+
+        switch frame {
+        case let .runStarted(threadID, _, _, _),
+             let .reasoning(threadID, _, _, _, _),
+             let .assistantText(threadID, _, _, _),
+             let .runCompletion(threadID, _, _, _, _),
+             let .threadCatchUpBatch(threadID, _, _, _):
+            return threadID == selectedThreadID
+        case .sessionReady, .threadListSnapshot, .error:
+            return true
+        }
     }
 
     private func entryAlignment(for role: CodexV2WorkspaceEntry.Role) -> Alignment {

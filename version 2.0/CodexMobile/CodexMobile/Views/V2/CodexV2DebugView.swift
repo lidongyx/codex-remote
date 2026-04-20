@@ -293,8 +293,12 @@ private extension CodexV2ServerFrame {
         switch self {
         case let .sessionReady(sessionID, connectionMode, globalSequence):
             return "session=\(sessionID)\nmode=\(connectionMode)\nglobalSequence=\(globalSequence)"
-        case let .threadListSnapshot(globalSequence, threadCount):
-            return "globalSequence=\(globalSequence)\nthreadCount=\(threadCount)"
+        case let .threadListSnapshot(globalSequence, threads):
+            let threadPreview = threads.prefix(3).map { thread in
+                thread.title.isEmpty ? thread.threadID : thread.title
+            }.joined(separator: ", ")
+            let suffix = threadPreview.isEmpty ? "" : "\nthreads=\(threadPreview)"
+            return "globalSequence=\(globalSequence)\nthreadCount=\(threads.count)\(suffix)"
         case let .runStarted(threadID, turnID, globalSequence, model):
             return "thread=\(threadID)\nturn=\(turnID)\nsequence=\(globalSequence)\nmodel=\(model)"
         case let .reasoning(threadID, turnID, globalSequence, itemID, delta):
