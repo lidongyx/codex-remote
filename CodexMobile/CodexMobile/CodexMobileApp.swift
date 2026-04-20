@@ -9,6 +9,7 @@ import SwiftUI
 @main
 struct CodexMobileApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(AppLanguage.storageKey) private var appLanguageRawValue = AppLanguage.defaultStoredRawValue
     @State private var codexService: CodexService
 
     init() {
@@ -21,6 +22,7 @@ struct CodexMobileApp: App {
         WindowGroup {
             ContentView()
                 .environment(codexService)
+                .environment(\.locale, selectedAppLanguage.locale)
                 .onOpenURL { url in
                     Task { @MainActor in
                         guard CodexService.legacyGPTLoginCallbackEnabled else {
@@ -41,5 +43,9 @@ struct CodexMobileApp: App {
                     TurnCacheManager.resetAll()
                 }
         }
+    }
+
+    private var selectedAppLanguage: AppLanguage {
+        AppLanguage(rawValue: appLanguageRawValue) ?? .system
     }
 }

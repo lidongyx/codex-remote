@@ -2,7 +2,7 @@
 // Purpose: Builds the UIKit edit-menu entries for the composer runtime controls.
 // Layer: View Helper
 // Exports: TurnComposerRuntimeMenuBuilder
-// Depends on: UIKit, TurnComposerRuntimeState, TurnComposerRuntimeActions, CodexServiceTier
+// Depends on: UIKit, TurnComposerRuntimeState, TurnComposerRuntimeActions
 
 import UIKit
 
@@ -17,14 +17,12 @@ struct TurnComposerRuntimeMenuBuilder {
             children.append(reasoningMenu)
         }
 
-        children.append(makeSpeedMenu())
-
         guard !children.isEmpty else {
             return nil
         }
 
         return UIMenu(
-            title: "Chat Runtime",
+            title: L10n.string("Chat Runtime"),
             image: UIImage(systemName: "slider.horizontal.3"),
             children: children
         )
@@ -46,37 +44,8 @@ struct TurnComposerRuntimeMenuBuilder {
         }
 
         return UIMenu(
-            title: "Reasoning",
+            title: L10n.string("Reasoning"),
             image: UIImage(systemName: "brain"),
-            children: children
-        )
-    }
-
-    private func makeSpeedMenu() -> UIMenu {
-        var children: [UIMenuElement] = [
-            UIAction(
-                title: "Normal",
-                state: runtimeState.isSelectedServiceTier(nil) ? .on : .off
-            ) { _ in
-                runtimeActions.selectServiceTier(nil)
-            },
-        ]
-
-        children.append(
-            contentsOf: CodexServiceTier.allCases.map { serviceTier in
-                UIAction(
-                    title: serviceTier.displayName,
-                    image: UIImage(systemName: serviceTier.iconName),
-                    state: runtimeState.isSelectedServiceTier(serviceTier) ? .on : .off
-                ) { _ in
-                    runtimeActions.selectServiceTier(serviceTier)
-                }
-            }
-        )
-
-        return UIMenu(
-            title: "Speed",
-            image: UIImage(systemName: "bolt.fill"),
             children: children
         )
     }

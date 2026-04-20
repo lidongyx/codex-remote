@@ -47,8 +47,14 @@ const {
 const { createShortPairingCode, SHORT_PAIRING_CODE_LENGTH } = require("./qr");
 
 const execFileAsync = promisify(execFile);
-const RELAY_WATCHDOG_PING_INTERVAL_MS = 10_000;
-const RELAY_WATCHDOG_STALE_AFTER_MS = 25_000;
+const RELAY_WATCHDOG_PING_INTERVAL_MS = readPositiveIntegerEnv(
+  "REMODEX_RELAY_WATCHDOG_PING_INTERVAL_MS",
+  10_000
+);
+const RELAY_WATCHDOG_STALE_AFTER_MS = readPositiveIntegerEnv(
+  "REMODEX_RELAY_WATCHDOG_STALE_AFTER_MS",
+  120_000
+);
 const BRIDGE_STATUS_HEARTBEAT_INTERVAL_MS = 5_000;
 const STALE_RELAY_STATUS_MESSAGE = "Relay heartbeat stalled; reconnect pending.";
 const RELAY_HISTORY_IMAGE_REFERENCE_URL = "remodex://history-image-elided";
@@ -118,6 +124,8 @@ function startBridge({
   let relayWatchdogTimer = null;
   let statusHeartbeatTimer = null;
   let lastRelayActivityAt = 0;
+  let lastRelayPingAt = 0;
+  let lastRelayPongAt = 0;
   let lastPublishedBridgeStatus = null;
   let lastConnectionStatus = null;
   let codexLaunchState = config.codexEndpoint ? "connected" : "starting";
@@ -252,8 +260,11 @@ function startBridge({
   }
 
   // Tracks relay liveness locally so sleep/wake zombie sockets can be force-reconnected.
-  function markRelayActivity() {
+  function markRelayActivity(source = "unknown") {
     lastRelayActivityAt = Date.now();
+    if (source === "pong") {
+      lastRelayPongAt = lastRelayActivityAt;
+    }
   }
 
   function clearRelayWatchdog() {
@@ -267,7 +278,7 @@ function startBridge({
 
   function startRelayWatchdog(trackedSocket) {
     clearRelayWatchdog();
-    markRelayActivity();
+    markRelayActivity("watchdog-start");
 
     relayWatchdogTimer = setInterval(() => {
       if (isShuttingDown || socket !== trackedSocket) {
@@ -279,14 +290,25 @@ function startBridge({
         return;
       }
 
+      const idleMs = Date.now() - lastRelayActivityAt;
       if (hasRelayConnectionGoneStale(lastRelayActivityAt)) {
-        console.warn("[remodex] relay heartbeat stalled; forcing reconnect");
+        const lastPingAgeMs = lastRelayPingAt > 0 ? Date.now() - lastRelayPingAt : null;
+        const lastPongAgeMs = lastRelayPongAt > 0 ? Date.now() - lastRelayPongAt : null;
+        console.warn(
+          "[remodex] relay heartbeat stalled; forcing reconnect"
+          + ` idleMs=${idleMs}`
+          + ` pingIntervalMs=${RELAY_WATCHDOG_PING_INTERVAL_MS}`
+          + ` staleAfterMs=${RELAY_WATCHDOG_STALE_AFTER_MS}`
+          + ` lastPingAgeMs=${lastPingAgeMs == null ? "none" : lastPingAgeMs}`
+          + ` lastPongAgeMs=${lastPongAgeMs == null ? "none" : lastPongAgeMs}`
+        );
         logConnectionStatus("disconnected");
         trackedSocket.terminate();
         return;
       }
 
       try {
+        lastRelayPingAt = Date.now();
         trackedSocket.ping();
       } catch {
         trackedSocket.terminate();
@@ -359,7 +381,7 @@ function startBridge({
     socket = nextSocket;
 
     nextSocket.on("open", () => {
-      markRelayActivity();
+      markRelayActivity("open");
       clearReconnectTimer();
       reconnectAttempt = 0;
       startRelayWatchdog(nextSocket);
@@ -369,7 +391,7 @@ function startBridge({
     });
 
     nextSocket.on("message", (data) => {
-      markRelayActivity();
+      markRelayActivity("message");
       const message = typeof data === "string" ? data : data.toString("utf8");
       if (secureTransport.handleIncomingWireMessage(message, {
         sendControlMessage(controlMessage) {
@@ -386,11 +408,11 @@ function startBridge({
     });
 
     nextSocket.on("ping", () => {
-      markRelayActivity();
+      markRelayActivity("ping");
     });
 
     nextSocket.on("pong", () => {
-      markRelayActivity();
+      markRelayActivity("pong");
     });
 
     nextSocket.on("close", (code) => {
@@ -1507,6 +1529,15 @@ function parseBridgeJSON(value) {
   } catch {
     return null;
   }
+}
+
+function readPositiveIntegerEnv(name, fallbackValue, env = process.env) {
+  const rawValue = env?.[name];
+  const parsedValue = Number.parseInt(rawValue, 10);
+  if (Number.isFinite(parsedValue) && parsedValue > 0) {
+    return parsedValue;
+  }
+  return fallbackValue;
 }
 
 // Treats silent relay sockets as stale so the daemon can self-heal after sleep/wake.

@@ -61,7 +61,7 @@ enum SidebarThreadGrouping {
             groups.append(
                 SidebarThreadGroup(
                     id: "archived",
-                    label: "Archived (\(sortedArchived.count))",
+                    label: L10n.format("Archived (%d)", sortedArchived.count),
                     kind: .archived,
                     sortDate: firstArchived.updatedAt ?? firstArchived.createdAt ?? .distantPast,
                     projectPath: nil,
@@ -109,7 +109,7 @@ enum SidebarThreadGrouping {
         let sortDate = representativeThread?.updatedAt ?? representativeThread?.createdAt ?? .distantPast
         return SidebarThreadGroup(
             id: "project:\(projectKey)",
-            label: representativeThread?.projectDisplayName ?? "Cloud",
+            label: representativeThread?.projectDisplayName ?? L10n.string("Cloud"),
             kind: .project,
             sortDate: sortDate,
             projectPath: representativeThread?.normalizedProjectPath,

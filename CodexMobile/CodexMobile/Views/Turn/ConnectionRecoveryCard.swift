@@ -15,13 +15,13 @@ enum ConnectionRecoveryStatus: Equatable {
     var label: String {
         switch self {
         case .interrupted:
-            return "Interrupted"
+            return L10n.string("Interrupted")
         case .reconnecting:
-            return "Reconnecting"
+            return L10n.string("Reconnecting")
         case .actionRequired:
-            return "Action Needed"
+            return L10n.string("Action Needed")
         case .syncing:
-            return "Syncing"
+            return L10n.string("Syncing")
         }
     }
 
@@ -53,7 +53,7 @@ struct ConnectionRecoverySnapshot: Equatable {
     let trailingStyle: ConnectionRecoveryTrailingStyle
 
     init(
-        title: String = "Connection",
+        title: String = L10n.string("Connection"),
         summary: String,
         detail: String? = nil,
         status: ConnectionRecoveryStatus,

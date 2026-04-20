@@ -324,12 +324,12 @@ enum TurnGitActionKind: CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .syncNow: return "Update"
-        case .commit: return "Commit"
-        case .push: return "Push"
-        case .commitAndPush: return "Commit & Push"
-        case .createPR: return "Create PR"
-        case .discardRuntimeChangesAndSync: return "Discard Local Changes"
+        case .syncNow: return L10n.string("Update")
+        case .commit: return L10n.string("Commit")
+        case .push: return L10n.string("Push")
+        case .commitAndPush: return L10n.string("Commit & Push")
+        case .createPR: return L10n.string("Create PR")
+        case .discardRuntimeChangesAndSync: return L10n.string("Discard Local Changes")
         }
     }
 }
@@ -341,9 +341,9 @@ enum InlineCommitAndPushPhase: Sendable {
     var title: String {
         switch self {
         case .committing:
-            return "Committing..."
+            return L10n.string("Committing...")
         case .pushing:
-            return "Pushing..."
+            return L10n.string("Pushing...")
         }
     }
 }

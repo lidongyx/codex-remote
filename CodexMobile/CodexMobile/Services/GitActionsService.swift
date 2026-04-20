@@ -14,9 +14,9 @@ enum GitActionsError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .disconnected:
-            return "Not connected to bridge."
+            return L10n.string("Not connected to bridge.")
         case .invalidResponse:
-            return "Invalid response from bridge."
+            return L10n.string("Invalid response from bridge.")
         case .bridgeError(let code, let message):
             return userMessage(for: code, fallback: message)
         }
@@ -24,19 +24,19 @@ enum GitActionsError: LocalizedError {
 
     private func userMessage(for code: String?, fallback: String?) -> String {
         switch code {
-        case "nothing_to_commit": return "Nothing to commit."
-        case "nothing_to_push": return "Nothing to push."
-        case "push_rejected": return "Push rejected. Pull changes first."
-        case "branch_is_main": return "Cannot operate on the main branch."
-        case "protected_branch": return "This branch is protected."
+        case "nothing_to_commit": return L10n.string("Nothing to commit.")
+        case "nothing_to_push": return L10n.string("Nothing to push.")
+        case "push_rejected": return L10n.string("Push rejected. Pull changes first.")
+        case "branch_is_main": return L10n.string("Cannot operate on the main branch.")
+        case "protected_branch": return L10n.string("This branch is protected.")
         case "branch_behind_remote": return "Branch is behind remote. Pull first."
         case "dirty_and_behind": return "Uncommitted changes and branch is behind remote."
         case "checkout_conflict_dirty_tree":
-            return "Cannot switch branches: tracked local changes would be overwritten."
+            return L10n.string("Cannot switch branches: tracked local changes would be overwritten.")
         case "checkout_conflict_untracked_collision":
-            return "Cannot switch branches: untracked files would be overwritten."
+            return L10n.string("Cannot switch branches: untracked files would be overwritten.")
         case "checkout_branch_in_other_worktree":
-            return "Cannot switch branches: this branch is already open in another worktree."
+            return L10n.string("Cannot switch branches: this branch is already open in another worktree.")
         case "pull_conflict": return "Pull failed due to conflicts."
         case "branch_exists": return fallback ?? "Branch already exists."
         case "invalid_branch_name": return fallback ?? "Branch name is not valid for Git."

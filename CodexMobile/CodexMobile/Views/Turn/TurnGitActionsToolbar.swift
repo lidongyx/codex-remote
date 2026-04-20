@@ -72,21 +72,21 @@ struct TurnGitActionsToolbarButton: View {
     private var syncStatusAccessibilityValue: String? {
         switch gitSyncState {
         case "up_to_date":
-            return "Repository up to date"
+            return L10n.string("Repository up to date")
         case "ahead_only":
-            return "Local branch ahead of remote"
+            return L10n.string("Local branch ahead of remote")
         case "behind_only":
-            return "Remote branch ahead of local branch"
+            return L10n.string("Remote branch ahead of local branch")
         case "diverged":
-            return "Local and remote branches diverged"
+            return L10n.string("Local and remote branches diverged")
         case "dirty":
-            return "Local repository has uncommitted changes"
+            return L10n.string("Local repository has uncommitted changes")
         case "dirty_and_behind":
-            return "Local changes exist and remote branch moved ahead"
+            return L10n.string("Local changes exist and remote branch moved ahead")
         case "no_upstream":
-            return "Branch not published yet"
+            return L10n.string("Branch not published yet")
         case "detached_head":
-            return "Current branch unavailable"
+            return L10n.string("Current branch unavailable")
         default:
             return nil
         }

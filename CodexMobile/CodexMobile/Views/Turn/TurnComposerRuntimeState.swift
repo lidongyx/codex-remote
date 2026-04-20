@@ -14,7 +14,10 @@ struct TurnComposerRuntimeState {
     let selectedServiceTier: CodexServiceTier?
 
     var selectedReasoningTitle: String {
-        effectiveReasoningEffort.map(TurnComposerMetaMapper.reasoningTitle(for:)) ?? "Select reasoning"
+        if let effectiveReasoningEffort {
+            return TurnComposerMetaMapper.reasoningTitle(for: effectiveReasoningEffort)
+        }
+        return L10n.string("Select reasoning")
     }
 
     var showsSpeedBadgeInModelMenu: Bool {

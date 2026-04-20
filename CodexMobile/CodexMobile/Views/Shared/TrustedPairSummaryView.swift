@@ -30,7 +30,7 @@ struct TrustedPairSummaryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
+            Text(L10n.string(title).uppercased(with: AppLanguage.current.locale))
                 .font(AppFont.caption(weight: .semibold))
                 .foregroundStyle(.secondary)
 

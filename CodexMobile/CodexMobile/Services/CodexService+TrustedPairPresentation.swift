@@ -60,7 +60,7 @@ extension CodexService {
             return nil
         }
 
-        let fallbackName = "Mac \(macFingerprint ?? "")".trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = L10n.format("Mac %@", macFingerprint ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let systemName = macName ?? fallbackName
         let nickname = SidebarMacNicknameStore.nickname(for: trustedPairDeviceId)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,20 +105,20 @@ private extension CodexService {
 
     var trustedPairTitle: String {
         if isConnected || secureConnectionState == .encrypted {
-            return "Connected Pair"
+            return L10n.string("Connected Pair")
         }
 
         switch secureConnectionState {
         case .handshaking:
-            return "Pairing Mac"
+            return L10n.string("Pairing Mac")
         case .liveSessionUnresolved, .reconnecting, .trustedMac:
-            return "Saved Pair"
+            return L10n.string("Saved Pair")
         case .rePairRequired:
-            return "Previous Pair"
+            return L10n.string("Previous Pair")
         case .updateRequired, .notPaired:
-            return "Trusted Pair"
+            return L10n.string("Trusted Pair")
         case .encrypted:
-            return "Connected Pair"
+            return L10n.string("Connected Pair")
         }
     }
 

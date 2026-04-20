@@ -11,7 +11,7 @@ enum TurnComposerMetaMapper {
     // ─── Model Mapping ────────────────────────────────────────────────
 
     // Returns models sorted using the explicit product order expected by the UI.
-    static func orderedModels(from models: [CodexModelOption]) -> [CodexModelOption] {
+    nonisolated static func orderedModels(from models: [CodexModelOption]) -> [CodexModelOption] {
         let preferredOrder: [String] = [
             "gpt-5.1-codex-mini",
             "gpt-5.2",
@@ -34,7 +34,7 @@ enum TurnComposerMetaMapper {
     }
 
     // Normalizes backend ids into consistent menu labels.
-    static func modelTitle(for model: CodexModelOption) -> String {
+    nonisolated static func modelTitle(for model: CodexModelOption) -> String {
         switch model.model.lowercased() {
         case "gpt-5.3-codex":
             return "GPT-5.3-Codex"
@@ -56,7 +56,7 @@ enum TurnComposerMetaMapper {
     // ─── Reasoning Mapping ───────────────────────────────────────────
 
     // Converts server effort values to user-facing labels and sorts them by level.
-    static func reasoningDisplayOptions(from efforts: [String]) -> [TurnComposerReasoningDisplayOption] {
+    nonisolated static func reasoningDisplayOptions(from efforts: [String]) -> [TurnComposerReasoningDisplayOption] {
         efforts
             .map { effort in
                 TurnComposerReasoningDisplayOption(
@@ -73,20 +73,20 @@ enum TurnComposerMetaMapper {
     }
 
     // Maps raw effort values to user-facing labels.
-    static func reasoningTitle(for effort: String) -> String {
+    nonisolated static func reasoningTitle(for effort: String) -> String {
         let normalized = effort
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
         switch normalized {
         case "minimal", "low":
-            return "Low"
+            return L10n.string("Low")
         case "medium":
-            return "Medium"
+            return L10n.string("Medium")
         case "high":
-            return "High"
+            return L10n.string("High")
         case "xhigh", "extra_high", "extra-high", "very_high", "very-high":
-            return "Extra High"
+            return L10n.string("Extra High")
         default:
             return normalized.split(separator: "_")
                 .map { $0.capitalized }
@@ -102,15 +102,15 @@ struct TurnComposerReasoningDisplayOption: Identifiable {
     var id: String { effort }
 
     // Provides deterministic ordering for reasoning rows.
-    var rank: Int {
+    nonisolated var rank: Int {
         switch title {
-        case "Low":
+        case let value where value == L10n.string("Low"):
             return 0
-        case "Medium":
+        case let value where value == L10n.string("Medium"):
             return 1
-        case "High":
+        case let value where value == L10n.string("High"):
             return 2
-        case "Exceptional":
+        case let value where value == L10n.string("Exceptional"):
             return 3
         default:
             return 4

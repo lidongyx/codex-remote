@@ -18,23 +18,23 @@ enum AppFont {
 
         var title: String {
             switch self {
-            case .system: return "System"
-            case .geist: return "Geist"
-            case .geistMono: return "Geist Mono"
-            case .jetBrainsMono: return "JetBrains Mono"
+            case .system: return L10n.string("System")
+            case .geist: return L10n.string("Geist")
+            case .geistMono: return L10n.string("Geist Mono")
+            case .jetBrainsMono: return L10n.string("JetBrains Mono")
             }
         }
 
         var subtitle: String {
             switch self {
             case .system:
-                return "Use the native iOS font for regular text. Code stays monospaced."
+                return L10n.string("Use the native iOS font for regular text. Code stays monospaced.")
             case .geist:
-                return "Use Geist for regular text. Code stays monospaced."
+                return L10n.string("Use Geist for regular text. Code stays monospaced.")
             case .geistMono:
-                return "Use Geist Mono for regular text and code."
+                return L10n.string("Use Geist Mono for regular text and code.")
             case .jetBrainsMono:
-                return "Use JetBrains Mono for regular text and code."
+                return L10n.string("Use JetBrains Mono for regular text and code.")
             }
         }
     }

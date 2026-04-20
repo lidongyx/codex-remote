@@ -19,7 +19,7 @@ struct PrimaryCapsuleButton: View {
                         .font(.system(size: 15, weight: .semibold))
                 }
 
-                Text(title)
+                Text(L10n.string(title))
                     .font(AppFont.body(weight: .semibold))
             }
             .foregroundStyle(.black)

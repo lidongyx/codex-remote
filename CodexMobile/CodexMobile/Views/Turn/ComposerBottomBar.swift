@@ -216,7 +216,7 @@ struct ComposerBottomBar: View {
         } label: {
             composerMenuLabel(
                 title: selectedModelTitle,
-                leadingImageName: runtimeState.showsSpeedBadgeInModelMenu ? "bolt.fill" : nil,
+                leadingImageName: nil,
                 leadingImageIsSystem: true
             )
         }
@@ -242,32 +242,6 @@ struct ComposerBottomBar: View {
                             }
                         }
                         .disabled(runtimeState.reasoningMenuDisabled)
-                    }
-                }
-            }
-
-            Section("Speed") {
-                Button {
-                    HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                    runtimeActions.selectServiceTier(nil)
-                } label: {
-                    if runtimeState.isSelectedServiceTier(nil) {
-                        Label("Normal", systemImage: "checkmark")
-                    } else {
-                        Text("Normal")
-                    }
-                }
-
-                ForEach(CodexServiceTier.allCases, id: \.rawValue) { tier in
-                    Button {
-                        HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                        runtimeActions.selectServiceTier(tier)
-                    } label: {
-                        if runtimeState.isSelectedServiceTier(tier) {
-                            Label(tier.displayName, systemImage: "checkmark")
-                        } else {
-                            Text(tier.displayName)
-                        }
                     }
                 }
             }

@@ -98,20 +98,6 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Speed")
-                Spacer()
-                Picker("Speed", selection: runtimeServiceTierSelection) {
-                    Text("Normal").tag(runtimeNormalValue)
-                    ForEach(CodexServiceTier.allCases, id: \.rawValue) { tier in
-                        Text(tier.displayName).tag(tier.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .tint(settingsAccentColor)
-            }
-
-            HStack {
                 Text("Access")
                 Spacer()
                 Picker("Access", selection: runtimeAccessSelection) {
@@ -209,26 +195,26 @@ struct SettingsView: View {
     private var connectionStatusLabel: String {
         switch codex.connectionPhase {
         case .offline:
-            return "offline"
+            return L10n.string("offline")
         case .connecting:
-            return "connecting"
+            return L10n.string("connecting")
         case .loadingChats:
-            return "loading chats"
+            return L10n.string("loading chats")
         case .syncing:
-            return "syncing"
+            return L10n.string("syncing")
         case .connected:
-            return "connected"
+            return L10n.string("connected")
         }
     }
 
     private var connectionProgressLabel: String {
         switch codex.connectionPhase {
         case .connecting:
-            return "Connecting to relay..."
+            return L10n.string("Connecting to relay...")
         case .loadingChats:
-            return "Loading chats..."
+            return L10n.string("Loading chats...")
         case .syncing:
-            return "Syncing workspace..."
+            return L10n.string("Syncing workspace...")
         case .offline, .connected:
             return ""
         }
@@ -280,17 +266,6 @@ struct SettingsView: View {
         )
     }
 
-    private var runtimeServiceTierSelection: Binding<String> {
-        Binding(
-            get: { codex.selectedServiceTier?.rawValue ?? runtimeNormalValue },
-            set: { selection in
-                codex.setSelectedServiceTier(
-                    selection == runtimeNormalValue ? nil : CodexServiceTier(rawValue: selection)
-                )
-            }
-        )
-    }
-
     // Writes nicknames against the active trusted Mac so switching pairs does not reuse the wrong alias.
     private func sidebarMacNicknameBinding(for presentation: CodexTrustedPairPresentation) -> Binding<String> {
         Binding(
@@ -308,7 +283,7 @@ struct SettingsCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title.uppercased())
+            Text(L10n.string(title).uppercased(with: AppLanguage.current.locale))
                 .font(AppFont.caption(weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
@@ -343,7 +318,7 @@ struct SettingsButton: View {
                 if isLoading {
                     ProgressView()
                 } else {
-                    Text(title)
+                    Text(L10n.string(title))
                 }
             }
             .font(AppFont.subheadline(weight: .medium))
@@ -427,6 +402,7 @@ private struct SettingsUsageCard: View {
 
 private struct SettingsAppearanceCard: View {
     @Binding var appFontStyle: AppFont.Style
+    @AppStorage(AppLanguage.storageKey) private var appLanguageRawValue = AppLanguage.defaultStoredRawValue
     @AppStorage("codex.useLiquidGlass") private var useLiquidGlass = true
     private let settingsAccentColor = Color(.plan)
 
@@ -449,6 +425,27 @@ private struct SettingsAppearanceCard: View {
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 
+            Divider()
+
+            HStack {
+                Text("Language")
+                Spacer()
+                Picker("Language", selection: $appLanguageRawValue) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.displayName).tag(language.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .tint(settingsAccentColor)
+            }
+
+            Text(selectedAppLanguage == .system
+                 ? L10n.string("Follow your iPhone system language.")
+                 : L10n.string("Applies immediately across the app."))
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
             if GlassPreference.isSupported {
                 Divider()
 
@@ -462,6 +459,10 @@ private struct SettingsAppearanceCard: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var selectedAppLanguage: AppLanguage {
+        AppLanguage(rawValue: appLanguageRawValue) ?? .system
     }
 }
 
@@ -604,51 +605,51 @@ private struct SettingsBridgeVersionCard: View {
     }
 
     private var installedVersionLabel: String {
-        normalizedVersion(codex.bridgeInstalledVersion) ?? "Unknown"
+        normalizedVersion(codex.bridgeInstalledVersion) ?? L10n.string("Unknown")
     }
 
     private var latestVersionLabel: String {
-        normalizedVersion(codex.latestBridgePackageVersion) ?? "Unknown"
+        normalizedVersion(codex.latestBridgePackageVersion) ?? L10n.string("Unknown")
     }
 
     private var guidanceText: String? {
         guard let installedVersion else {
-            return "Connect to a Mac bridge to read the installed package version."
+            return L10n.string("Connect to a Mac bridge to read the installed package version.")
         }
 
         guard let latestVersion else {
-            return "Installed version detected. The latest published package is unavailable right now."
+            return L10n.string("Installed version detected. The latest published package is unavailable right now.")
         }
 
         if installedVersion == latestVersion {
-            return "The installed bridge matches the latest published package."
+            return L10n.string("The installed bridge matches the latest published package.")
         }
 
         if installedVersion.compare(latestVersion, options: .numeric) == .orderedAscending {
-            return "A newer Remodex package is available on npm."
+            return L10n.string("A newer Remodex package is available on npm.")
         }
 
-        return "This Mac is running a different build than the current npm latest."
+        return L10n.string("This Mac is running a different build than the current npm latest.")
     }
 
     private var versionStatusLabel: String {
         guard let installedVersion else {
-            return "Unknown"
+            return L10n.string("Unknown")
         }
 
         guard let latestVersion else {
-            return "Installed"
+            return L10n.string("Installed")
         }
 
         if installedVersion == latestVersion {
-            return "Up to date"
+            return L10n.string("Up to date")
         }
 
         if installedVersion.compare(latestVersion, options: .numeric) == .orderedAscending {
-            return "Update available"
+            return L10n.string("Update available")
         }
 
-        return "Different build"
+        return L10n.string("Different build")
     }
 
     private var guidanceColor: Color {
@@ -690,7 +691,7 @@ private struct SettingsBridgeVersionCard: View {
 
     private func settingsVersionRow(title: String, value: String, valueStyle: Color) -> some View {
         HStack(spacing: 12) {
-            Text(title)
+            Text(L10n.string(title))
             Spacer()
             Text(value)
                 .font(AppFont.mono(.subheadline))
@@ -814,7 +815,7 @@ private struct SettingsAboutCard: View {
     ) -> some View {
         HStack(spacing: 8) {
             leading()
-            Text(title)
+            Text(L10n.string(title))
                 .font(AppFont.subheadline(weight: .medium))
             Spacer()
             Image(systemName: "chevron.right")

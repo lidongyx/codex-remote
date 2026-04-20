@@ -20,30 +20,30 @@ enum TurnComposerSlashCommand: String, Identifiable, Equatable {
     var title: String {
         switch self {
         case .codeReview:
-            return "Code Review"
+            return L10n.string("Code Review")
         case .feedback:
-            return "Feedback"
+            return L10n.string("Feedback")
         case .fork:
-            return "Fork"
+            return L10n.string("Fork")
         case .status:
-            return "Status"
+            return L10n.string("Status")
         case .subagents:
-            return "Subagents"
+            return L10n.string("Subagents")
         }
     }
 
     var subtitle: String {
         switch self {
         case .codeReview:
-            return "Run the reviewer on your local changes"
+            return L10n.string("Run the reviewer on your local changes")
         case .feedback:
-            return "Share feedback on Remodex with the developer"
+            return L10n.string("Share feedback on Remodex with the developer")
         case .fork:
-            return "Fork this thread into local or a new worktree"
+            return L10n.string("Fork this thread into local or a new worktree")
         case .status:
-            return "Show context usage and rate limits"
+            return L10n.string("Show context usage and rate limits")
         case .subagents:
-            return "Insert a canned prompt that asks Codex to delegate work"
+            return L10n.string("Insert a canned prompt that asks Codex to delegate work")
         }
     }
 
@@ -81,7 +81,9 @@ enum TurnComposerSlashCommand: String, Identifiable, Equatable {
     var cannedPrompt: String? {
         switch self {
         case .subagents:
-            return "Run subagents for different tasks. Delegate distinct work in parallel when helpful and then synthesize the results."
+            return L10n.string(
+                "Run subagents for different tasks. Delegate distinct work in parallel when helpful and then synthesize the results."
+            )
         case .codeReview, .feedback, .fork, .status:
             return nil
         }
@@ -127,18 +129,18 @@ enum TurnComposerForkDestination: String, Identifiable, Equatable {
     var title: String {
         switch self {
         case .local:
-            return "Fork into local"
+            return L10n.string("Fork into local")
         case .newWorktree:
-            return "Fork into new worktree"
+            return L10n.string("Fork into new worktree")
         }
     }
 
     var subtitle: String {
         switch self {
         case .local:
-            return "Continue in a new local thread"
+            return L10n.string("Continue in a new local thread")
         case .newWorktree:
-            return "Continue in a new worktree"
+            return L10n.string("Continue in a new worktree")
         }
     }
 
@@ -174,9 +176,9 @@ enum TurnComposerReviewTarget: String, Equatable {
     var title: String {
         switch self {
         case .uncommittedChanges:
-            return "Uncommitted changes"
+            return L10n.string("Uncommitted changes")
         case .baseBranch:
-            return "Base branch"
+            return L10n.string("Base branch")
         }
     }
 

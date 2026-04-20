@@ -14,11 +14,11 @@ enum PlanAccessoryStatus: Equatable {
     var label: String {
         switch self {
         case .pending:
-            return "Pending"
+            return L10n.string("Pending")
         case .inProgress:
-            return "In progress"
+            return L10n.string("In progress")
         case .completed:
-            return "Completed"
+            return L10n.string("Completed")
         }
     }
 
@@ -55,7 +55,7 @@ struct PlanAccessorySnapshot: Equatable {
     let stepStatuses: [CodexPlanStepStatus]
 
     init(
-        title: String = "Plan",
+        title: String = L10n.string("Plan"),
         summary: String,
         status: PlanAccessoryStatus,
         completedStepCount: Int,

@@ -112,10 +112,10 @@ struct OnboardingView: View {
 
     private var buttonTitle: String {
         switch currentPage {
-        case 0: return "Get Started"
-        case 1: return "Set Up"
-        case pageCount - 1: return "Scan QR Code"
-        default: return "Continue"
+        case 0: return L10n.string("Get Started")
+        case 1: return L10n.string("Set Up")
+        case pageCount - 1: return L10n.string("Scan QR Code")
+        default: return L10n.string("Continue")
         }
     }
 

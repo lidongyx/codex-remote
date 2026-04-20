@@ -342,7 +342,7 @@ extension CodexThread {
     // Distinguishes Codex-managed worktrees from the main repo in compact sidebar UIs.
     static func projectDisplayLabel(for normalizedProjectPath: String?) -> String {
         guard let normalizedProjectPath else {
-            return "Cloud"
+            return L10n.string("Cloud")
         }
 
         let baseLabel = projectBaseDisplayName(for: normalizedProjectPath)
