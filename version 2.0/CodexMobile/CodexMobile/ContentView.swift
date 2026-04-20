@@ -59,6 +59,7 @@ struct ContentView: View {
     @AppStorage("codex.whatsNew.lastPresentedVersion") private var lastPresentedWhatsNewVersion = ""
     @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
     @State private var isShowingV2WorkspaceSheet = false
+    @State private var shouldPresentV2WorkspaceAfterSidebarCloses = false
 
     private let sidebarWidth: CGFloat = 330
     // Lets the drawer gesture start a bit inside the content instead of only on the bezel edge.
@@ -105,6 +106,13 @@ struct ContentView: View {
                     "open-state changed wasOpen=\(wasOpen) isOpen=\(isOpen) prewarmed=\(isSidebarPrewarmed) "
                         + "dragOffset=\(Int(sidebarDragOffset)) threadCount=\(codex.threads.count)"
                 )
+                if wasOpen, !isOpen, shouldPresentV2WorkspaceAfterSidebarCloses {
+                    shouldPresentV2WorkspaceAfterSidebarCloses = false
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 180_000_000)
+                        isShowingV2WorkspaceSheet = true
+                    }
+                }
                 guard !wasOpen, isOpen else {
                     return
                 }
@@ -818,12 +826,12 @@ struct ContentView: View {
 
     private func openV2Workspace() {
         if isSidebarOpen || sidebarDragOffset > 0 {
+            shouldPresentV2WorkspaceAfterSidebarCloses = true
             closeSidebar()
+            return
         }
 
-        Task { @MainActor in
-            isShowingV2WorkspaceSheet = true
-        }
+        isShowingV2WorkspaceSheet = true
     }
 
     // Keeps first-run installs in the scanner by default, while still letting users back out later.
