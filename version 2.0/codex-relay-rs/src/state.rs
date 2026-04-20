@@ -45,7 +45,27 @@ impl AppState {
             self.presence_by_mac.remove(mac_device_id);
             return None;
         }
+        let session_id = presence.relay_session_id.clone();
+        drop(presence);
+
+        let room = self.sessions.get(&session_id)?;
+        if room.mac.is_none() {
+            drop(room);
+            self.presence_by_mac.remove(mac_device_id);
+            return None;
+        }
+
+        let presence = self.presence_by_mac.get(mac_device_id)?;
         Some(presence.clone())
+    }
+
+    pub fn remove_presence_for_session(&self, mac_device_id: &str, relay_session_id: &str) {
+        if let Some(existing) = self.presence_by_mac.get(mac_device_id) {
+            if existing.relay_session_id == relay_session_id {
+                drop(existing);
+                self.presence_by_mac.remove(mac_device_id);
+            }
+        }
     }
 }
 
@@ -53,6 +73,7 @@ pub type PeerTx = mpsc::UnboundedSender<Message>;
 
 #[derive(Clone)]
 pub struct RelayRoom {
+    pub mac_device_id: Option<String>,
     pub mac: Option<PeerTx>,
     pub phones: HashMap<String, PeerTx>,
 }
@@ -60,6 +81,7 @@ pub struct RelayRoom {
 impl RelayRoom {
     pub fn empty() -> Self {
         Self {
+            mac_device_id: None,
             mac: None,
             phones: HashMap::new(),
         }

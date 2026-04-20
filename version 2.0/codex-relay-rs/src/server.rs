@@ -134,6 +134,7 @@ async fn handle_socket(
             .entry(session_id.clone())
             .or_insert_with(RelayRoom::empty);
         if role == "mac" {
+            room.mac_device_id = Some(device_id.clone());
             room.mac = Some(tx.clone());
         } else {
             room.phones.insert(device_id.clone(), tx.clone());
@@ -214,6 +215,10 @@ fn forward_text(
 fn unregister_peer(state: &Arc<AppState>, session_id: &str, role: &str, device_id: &str) {
     let should_remove_room = if let Some(mut room) = state.sessions.get_mut(session_id) {
         if role == "mac" {
+            if let Some(mac_device_id) = room.mac_device_id.clone() {
+                state.remove_presence_for_session(&mac_device_id, session_id);
+            }
+            room.mac_device_id = None;
             room.mac = None;
         } else {
             room.phones.remove(device_id);

@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
-use tokio::time::sleep;
+use tokio::time::{interval, sleep};
 use tokio_tungstenite::connect_async;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -66,12 +66,69 @@ impl RelayClient {
         );
 
         info!("connecting codexd relay websocket to {}", ws_url);
-        let (mut websocket, _) = connect_async(&ws_url).await?;
+        let (websocket, _) = connect_async(&ws_url).await?;
+        let (mut write, mut read) = websocket.split();
         self.session_registry.set_active_sessions(1);
+        self.session_registry.set_relay_connected(true);
         self.register_presence(&relay_http_url, &session_id).await?;
         info!("relay websocket connected and presence registered");
 
-        while let Some(next) = websocket.next().await {
+        let presence_refresh_client = self.http_client.clone();
+        let presence_refresh_registry = self.session_registry.clone();
+        let refresh_body = PresenceRegisterRequest {
+            mac_device_id: self.trust_store.mac_device_id.clone(),
+            relay_session_id: session_id.clone(),
+            daemon_version: self.config.daemon_version.clone(),
+            machine_name: self.trust_store.machine_name.clone(),
+            route_candidates: vec![RouteCandidate {
+                kind: "relay".to_string(),
+                address: format!("session:{session_id}"),
+                priority: 100,
+            }],
+            ttl_seconds: 90,
+        };
+        let refresh_url = format!(
+            "{}/v2/presence/register",
+            relay_http_url.trim_end_matches('/')
+        );
+
+        let refresh_task = tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(30));
+            loop {
+                ticker.tick().await;
+                let result = presence_refresh_client
+                    .post(&refresh_url)
+                    .json(&refresh_body)
+                    .send()
+                    .await
+                    .and_then(|response| response.error_for_status());
+                match result {
+                    Ok(_) => {
+                        presence_refresh_registry
+                            .set_last_presence_refresh_epoch_ms(now_epoch_ms());
+                    }
+                    Err(error) => {
+                        warn!("presence refresh failed: {}", error);
+                    }
+                }
+            }
+        });
+
+        let ping_task = tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(20));
+            loop {
+                ticker.tick().await;
+                if write
+                    .send(tokio_tungstenite::tungstenite::Message::Ping(Vec::new()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        while let Some(next) = read.next().await {
             match next {
                 Ok(message) => {
                     if message.is_close() {
@@ -86,6 +143,9 @@ impl RelayClient {
         }
 
         self.session_registry.set_active_sessions(0);
+        self.session_registry.set_relay_connected(false);
+        refresh_task.abort();
+        ping_task.abort();
         warn!("relay websocket disconnected");
         Ok(())
     }
@@ -114,6 +174,8 @@ impl RelayClient {
             .send()
             .await?
             .error_for_status()?;
+        self.session_registry
+            .set_last_presence_refresh_epoch_ms(now_epoch_ms());
         Ok(())
     }
 }
@@ -133,4 +195,13 @@ struct RouteCandidate {
     kind: String,
     address: String,
     priority: u32,
+}
+
+fn now_epoch_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
