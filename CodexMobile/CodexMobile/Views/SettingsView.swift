@@ -98,6 +98,20 @@ struct SettingsView: View {
             }
 
             HStack {
+                Text("Speed")
+                Spacer()
+                Picker("Speed", selection: runtimeSpeedSelection) {
+                    Text(TurnComposerMetaMapper.serviceTierTitle(for: nil)).tag(runtimeNormalValue)
+                    ForEach(CodexServiceTier.allCases, id: \.self) { serviceTier in
+                        Text(serviceTier.displayName).tag(serviceTier.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .tint(settingsAccentColor)
+            }
+
+            HStack {
                 Text("Access")
                 Spacer()
                 Picker("Access", selection: runtimeAccessSelection) {
@@ -255,6 +269,18 @@ struct SettingsView: View {
             get: { codex.selectedReasoningEffort ?? runtimeAutoValue },
             set: { selection in
                 codex.setSelectedReasoningEffort(selection == runtimeAutoValue ? nil : selection)
+            }
+        )
+    }
+
+    private var runtimeSpeedSelection: Binding<String> {
+        Binding(
+            get: { codex.selectedServiceTier?.rawValue ?? runtimeNormalValue },
+            set: { selection in
+                let serviceTier = (selection == runtimeNormalValue)
+                    ? nil
+                    : CodexServiceTier(rawValue: selection)
+                codex.setSelectedServiceTier(serviceTier)
             }
         )
     }

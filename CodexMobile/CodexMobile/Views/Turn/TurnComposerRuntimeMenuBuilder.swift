@@ -17,6 +17,8 @@ struct TurnComposerRuntimeMenuBuilder {
             children.append(reasoningMenu)
         }
 
+        children.append(makeSpeedMenu())
+
         guard !children.isEmpty else {
             return nil
         }
@@ -46,6 +48,36 @@ struct TurnComposerRuntimeMenuBuilder {
         return UIMenu(
             title: L10n.string("Reasoning"),
             image: UIImage(systemName: "brain"),
+            children: children
+        )
+    }
+
+    // Mirrors the composer speed control so long-press editing keeps the same runtime access.
+    private func makeSpeedMenu() -> UIMenu {
+        var children: [UIMenuElement] = [
+            UIAction(
+                title: TurnComposerMetaMapper.serviceTierTitle(for: nil),
+                state: runtimeState.isSelectedServiceTier(nil) ? .on : .off
+            ) { _ in
+                runtimeActions.selectServiceTier(nil)
+            }
+        ]
+
+        children.append(
+            contentsOf: CodexServiceTier.allCases.map { serviceTier in
+                UIAction(
+                    title: serviceTier.displayName,
+                    image: UIImage(systemName: serviceTier.iconName),
+                    state: runtimeState.isSelectedServiceTier(serviceTier) ? .on : .off
+                ) { _ in
+                    runtimeActions.selectServiceTier(serviceTier)
+                }
+            }
+        )
+
+        return UIMenu(
+            title: L10n.string("Speed"),
+            image: UIImage(systemName: "bolt.fill"),
             children: children
         )
     }

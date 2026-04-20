@@ -1,8 +1,8 @@
 // FILE: TurnComposerMetaMapper.swift
-// Purpose: Centralizes model/reasoning label mapping and ordering for TurnView composer menus.
+// Purpose: Centralizes model/reasoning/speed label mapping and ordering for TurnView composer menus.
 // Layer: View Helper
 // Exports: TurnComposerMetaMapper, TurnComposerReasoningDisplayOption
-// Depends on: CodexModelOption
+// Depends on: CodexModelOption, CodexServiceTier
 
 import Foundation
 
@@ -92,6 +92,16 @@ enum TurnComposerMetaMapper {
                 .map { $0.capitalized }
                 .joined(separator: " ")
         }
+    }
+
+    // ─── Speed Mapping ───────────────────────────────────────────────
+
+    // Maps the optional speed selection into a stable user-facing title.
+    nonisolated static func serviceTierTitle(for serviceTier: CodexServiceTier?) -> String {
+        guard let serviceTier else {
+            return L10n.string("Normal")
+        }
+        return serviceTier.displayName
     }
 }
 

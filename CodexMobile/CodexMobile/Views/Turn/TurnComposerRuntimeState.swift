@@ -14,14 +14,18 @@ struct TurnComposerRuntimeState {
     let selectedServiceTier: CodexServiceTier?
 
     var selectedReasoningTitle: String {
+        let reasoningTitle: String
         if let effectiveReasoningEffort {
-            return TurnComposerMetaMapper.reasoningTitle(for: effectiveReasoningEffort)
+            reasoningTitle = TurnComposerMetaMapper.reasoningTitle(for: effectiveReasoningEffort)
+        } else {
+            reasoningTitle = L10n.string("Select reasoning")
         }
-        return L10n.string("Select reasoning")
-    }
 
-    var showsSpeedBadgeInModelMenu: Bool {
-        selectedServiceTier != nil
+        guard let selectedServiceTier else {
+            return reasoningTitle
+        }
+
+        return "\(reasoningTitle) · \(selectedServiceTier.displayName)"
     }
 
     func isSelectedReasoning(_ effort: String) -> Bool {

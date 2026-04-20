@@ -194,21 +194,22 @@ struct ComposerBottomBar: View {
 
     private var modelMenu: some View {
         Menu {
-            Text("Select model")
-            if isLoadingModels {
-                Text("Loading models...")
-            } else if orderedModelOptions.isEmpty {
-                Text("No models available")
-            } else {
-                ForEach(orderedModelOptions, id: \.id) { model in
-                    Button {
-                        HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                        runtimeActions.selectModel(model.id)
-                    } label: {
-                        if selectedModelID == model.id {
-                            Label(TurnComposerMetaMapper.modelTitle(for: model), systemImage: "checkmark")
-                        } else {
-                            Text(TurnComposerMetaMapper.modelTitle(for: model))
+            Section("Model") {
+                if isLoadingModels {
+                    Text("Loading models...")
+                } else if orderedModelOptions.isEmpty {
+                    Text("No models available")
+                } else {
+                    ForEach(orderedModelOptions, id: \.id) { model in
+                        Button {
+                            HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                            runtimeActions.selectModel(model.id)
+                        } label: {
+                            if selectedModelID == model.id {
+                                Label(TurnComposerMetaMapper.modelTitle(for: model), systemImage: "checkmark")
+                            } else {
+                                Text(TurnComposerMetaMapper.modelTitle(for: model))
+                            }
                         }
                     }
                 }
@@ -226,6 +227,32 @@ struct ComposerBottomBar: View {
 
     private var reasoningMenu: some View {
         Menu {
+            Section("Speed") {
+                Button {
+                    HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                    runtimeActions.selectServiceTier(nil)
+                } label: {
+                    if runtimeState.isSelectedServiceTier(nil) {
+                        Label(TurnComposerMetaMapper.serviceTierTitle(for: nil), systemImage: "checkmark")
+                    } else {
+                        Text(TurnComposerMetaMapper.serviceTierTitle(for: nil))
+                    }
+                }
+
+                ForEach(CodexServiceTier.allCases, id: \.self) { serviceTier in
+                    Button {
+                        HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                        runtimeActions.selectServiceTier(serviceTier)
+                    } label: {
+                        if runtimeState.isSelectedServiceTier(serviceTier) {
+                            Label(serviceTier.displayName, systemImage: "checkmark")
+                        } else {
+                            Label(serviceTier.displayName, systemImage: serviceTier.iconName)
+                        }
+                    }
+                }
+            }
+
             Section("Reasoning") {
                 if runtimeState.reasoningDisplayOptions.isEmpty {
                     Text("No reasoning options")
