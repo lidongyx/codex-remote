@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
+use tokio::sync::mpsc;
 use tokio::time::{interval, sleep};
 use tokio_tungstenite::connect_async;
 use tracing::{info, warn};
@@ -68,10 +69,20 @@ impl RelayClient {
         info!("connecting codexd relay websocket to {}", ws_url);
         let (websocket, _) = connect_async(&ws_url).await?;
         let (mut write, mut read) = websocket.split();
+        let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
+        let ping_outbound_tx = outbound_tx.clone();
         self.session_registry.set_active_sessions(1);
         self.session_registry.set_relay_connected(true);
         self.register_presence(&relay_http_url, &session_id).await?;
         info!("relay websocket connected and presence registered");
+
+        let writer_task = tokio::spawn(async move {
+            while let Some(message) = outbound_rx.recv().await {
+                if write.send(message).await.is_err() {
+                    break;
+                }
+            }
+        });
 
         let presence_refresh_client = self.http_client.clone();
         let presence_refresh_registry = self.session_registry.clone();
@@ -118,9 +129,8 @@ impl RelayClient {
             let mut ticker = interval(Duration::from_secs(20));
             loop {
                 ticker.tick().await;
-                if write
+                if ping_outbound_tx
                     .send(tokio_tungstenite::tungstenite::Message::Ping(Vec::new()))
-                    .await
                     .is_err()
                 {
                     break;
@@ -134,6 +144,11 @@ impl RelayClient {
                     if message.is_close() {
                         break;
                     }
+                    if let Some(response) = self.handle_incoming_probe_message(&session_id, message) {
+                        if outbound_tx.send(response).is_err() {
+                            break;
+                        }
+                    }
                 }
                 Err(error) => {
                     warn!("relay websocket receive error: {}", error);
@@ -146,6 +161,7 @@ impl RelayClient {
         self.session_registry.set_relay_connected(false);
         refresh_task.abort();
         ping_task.abort();
+        writer_task.abort();
         warn!("relay websocket disconnected");
         Ok(())
     }
@@ -177,6 +193,39 @@ impl RelayClient {
         self.session_registry
             .set_last_presence_refresh_epoch_ms(now_epoch_ms());
         Ok(())
+    }
+
+    // Temporary dev probe surface while the typed binary application protocol is being wired.
+    fn handle_incoming_probe_message(
+        &self,
+        session_id: &str,
+        message: tokio_tungstenite::tungstenite::Message,
+    ) -> Option<tokio_tungstenite::tungstenite::Message> {
+        match message {
+            tokio_tungstenite::tungstenite::Message::Text(text) => {
+                let trimmed = text.trim();
+                if trimmed.eq_ignore_ascii_case("ping") {
+                    return Some(tokio_tungstenite::tungstenite::Message::Text("pong".into()));
+                }
+
+                if trimmed.eq_ignore_ascii_case("session_info") {
+                    let response = serde_json::json!({
+                        "type": "session_info",
+                        "sessionId": session_id,
+                        "macDeviceId": self.trust_store.mac_device_id,
+                        "machineName": self.trust_store.machine_name,
+                        "daemonVersion": self.config.daemon_version,
+                        "relayConnected": self.session_registry.relay_connected(),
+                    });
+                    return Some(tokio_tungstenite::tungstenite::Message::Text(
+                        response.to_string().into(),
+                    ));
+                }
+
+                None
+            }
+            _ => None,
+        }
     }
 }
 

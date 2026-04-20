@@ -34,3 +34,49 @@ Snapshot intent:
 - Keep the current implementation available for comparison.
 - Make V2 design and implementation work self-contained.
 - Avoid contaminating the existing shipping path while V2 is being designed.
+
+## Current Status
+
+V2 is not finished.
+
+Already implemented:
+
+- Rust workspace in this folder
+- first-pass protocol schema drafts in `proto/`
+- `codex-relay-rs` executable skeleton
+- `codexd` executable skeleton
+- relay-backed presence registration and session resolve
+- liveness-aware session invalidation when the Mac daemon disconnects
+
+Not implemented yet:
+
+- iOS V2 client integration
+- final binary application protocol
+- real Codex runtime integration
+- final trust bootstrap flow
+- final reconnect / catch-up product behavior
+
+## Current Dev Run
+
+You can run the current V2 relay + daemon skeleton locally:
+
+```sh
+cd "version 2.0"
+./scripts/dev-up.sh
+```
+
+In another terminal:
+
+```sh
+cd "version 2.0"
+./scripts/dev-smoke.sh
+```
+
+What this validates today:
+
+- relay process is alive
+- daemon process is alive
+- daemon registered remote presence with the relay
+- relay can resolve the current live remote session for the daemon
+
+The scripts are for development only.
