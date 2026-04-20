@@ -54,6 +54,17 @@ enum CodexV2PreviewProtoCodec {
             .build()
     }
 
+    static func makeRunInterruptRequestFrame(threadID: String, turnID: String) -> Data {
+        let inner = CodexV2ProtoWriter()
+            .string(field: 1, value: threadID)
+            .string(field: 2, value: turnID)
+            .build()
+
+        return CodexV2ProtoWriter()
+            .message(field: 21, payload: inner)
+            .build()
+    }
+
     static func makeThreadCatchUpRequestFrame(
         threadID: String,
         sinceThreadSequence: UInt64 = 0

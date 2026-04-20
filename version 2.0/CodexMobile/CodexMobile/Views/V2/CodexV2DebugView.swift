@@ -74,24 +74,80 @@ struct CodexV2DebugView: View {
                 .autocorrectionDisabled()
                 .font(AppFont.mono(.caption))
 
-            TextField("Probe Prompt", text: $client.prompt, axis: .vertical)
+            TextField("Prompt", text: $client.prompt, axis: .vertical)
                 .lineLimit(2...5)
 
-            SettingsButton(client.isRunning ? "Running..." : "Run Probe", isLoading: client.isRunning) {
-                Task { @MainActor in
-                    await client.runProbe()
+            if client.isConnected {
+                SettingsButton(client.isRunning ? "Stop Active Run" : "Send Prompt", isLoading: false) {
+                    Task { @MainActor in
+                        if client.isRunning {
+                            await client.interruptCurrentRun()
+                        } else {
+                            await client.sendPrompt()
+                        }
+                    }
+                }
+
+                SettingsButton("Refresh Threads") {
+                    Task { @MainActor in
+                        await client.refreshThreads()
+                    }
+                }
+
+                SettingsButton("Disconnect") {
+                    client.disconnect()
+                }
+            } else {
+                SettingsButton(client.isConnecting ? "Connecting..." : "Connect", isLoading: client.isConnecting) {
+                    Task { @MainActor in
+                        await client.connect()
+                    }
+                }
+
+                SettingsButton("Connect and Send", isLoading: client.isConnecting) {
+                    Task { @MainActor in
+                        await client.connect(resetTimeline: client.timeline.frames.isEmpty)
+                        await client.sendPrompt()
+                    }
                 }
             }
 
-            SettingsButton("Clear") {
+            SettingsButton("Reset Timeline") {
                 client.clear()
+            }
+
+            SettingsButton("Reconnect") {
+                Task { @MainActor in
+                    client.disconnect()
+                    await client.connect(resetTimeline: false)
+                }
             }
         }
     }
 
     private var statusCard: some View {
         SettingsCard(title: "Status") {
+            settingsRow("Connection", connectionLabel)
+            settingsRow("Run Active", yesNo(client.isRunning))
+
+            if let activeThreadID = client.activeThreadID, !activeThreadID.isEmpty {
+                settingsRow("Active Thread", activeThreadID)
+            }
+
+            if let activeTurnID = client.activeTurnID, !activeTurnID.isEmpty {
+                settingsRow("Active Turn", activeTurnID)
+            }
+
+            if let latestThreadID = client.timeline.latestThreadID, !latestThreadID.isEmpty {
+                settingsRow("Latest Thread", latestThreadID)
+            }
+
+            if let latestTurnID = client.latestTurnID, !latestTurnID.isEmpty {
+                settingsRow("Latest Turn", latestTurnID)
+            }
+
             if let daemonHealth = client.daemonHealth {
+                Divider()
                 settingsRow("Mac Device ID", daemonHealth.macDeviceID)
                 settingsRow("Machine", daemonHealth.machineName)
                 if let runtimeMode = daemonHealth.runtimeMode, !runtimeMode.isEmpty {
@@ -191,6 +247,13 @@ struct CodexV2DebugView: View {
 
     private func yesNo(_ value: Bool) -> String {
         value ? "Yes" : "No"
+    }
+
+    private var connectionLabel: String {
+        if client.isConnecting {
+            return "Connecting"
+        }
+        return client.isConnected ? "Connected" : "Disconnected"
     }
 
     private var savedPairRelayURL: String? {

@@ -1,5 +1,5 @@
 // FILE: CodexV2PreviewClient.swift
-// Purpose: Minimal Version 2.0 relay-backed client for the iOS app snapshot.
+// Purpose: Interactive Version 2.0 relay-backed client for the iOS app snapshot.
 // Layer: Service
 // Exports: CodexV2PreviewClient
 
@@ -13,7 +13,7 @@ final class CodexV2PreviewClient {
         static let relayHTTPBaseURLString = "http://127.0.0.1:9910"
         static let relayWSBaseURLString = "ws://127.0.0.1:9910"
         static let daemonHealthURLString = "http://127.0.0.1:9911/health"
-        static let prompt = "Create a placeholder remote run from the V2 preview."
+        static let prompt = "Reply with a short V2 preview confirmation."
     }
 
     private enum StorageKey {
@@ -40,14 +40,23 @@ final class CodexV2PreviewClient {
         didSet { persist(prompt, forKey: StorageKey.prompt) }
     }
 
+    private(set) var isConnecting = false
+    private(set) var isConnected = false
     private(set) var isRunning = false
     private(set) var lastErrorMessage: String?
     private(set) var daemonHealth: CodexV2DaemonHealthSnapshot?
     private(set) var resolvedSession: CodexV2SessionResolveResponse?
     private(set) var timeline = CodexV2TimelineState()
+    private(set) var activeThreadID: String?
+    private(set) var activeTurnID: String?
+    private(set) var latestTurnID: String?
 
     private let urlSession: URLSession
     @ObservationIgnored private let userDefaults: UserDefaults
+    @ObservationIgnored private var currentConnection: CodexV2ResolvedConnection?
+    @ObservationIgnored private var webSocketTask: URLSessionWebSocketTask?
+    @ObservationIgnored private var receiveLoopTask: Task<Void, Never>?
+    @ObservationIgnored private var didRequestDisconnect = false
 
     init(
         urlSession: URLSession = .shared,
@@ -84,9 +93,10 @@ final class CodexV2PreviewClient {
 
     func clear() {
         lastErrorMessage = nil
-        daemonHealth = nil
-        resolvedSession = nil
         timeline = CodexV2TimelineState()
+        activeThreadID = nil
+        activeTurnID = nil
+        latestTurnID = nil
     }
 
     func resetConnectionFieldsToLocalDefaults() {
@@ -108,60 +118,112 @@ final class CodexV2PreviewClient {
         macDeviceIDOverride = macDeviceID ?? ""
     }
 
-    func runProbe() async {
-        guard !isRunning else { return }
-        isRunning = true
+    func connect(resetTimeline: Bool = false) async {
+        guard !isConnected, !isConnecting else { return }
+        isConnecting = true
         lastErrorMessage = nil
-        daemonHealth = nil
-        resolvedSession = nil
-        timeline = CodexV2TimelineState()
+        didRequestDisconnect = false
 
-        defer { isRunning = false }
+        if resetTimeline {
+            clear()
+        }
+
+        defer { isConnecting = false }
 
         do {
-            let connection = try await resolveConnection(
-                macDeviceID: normalizedMacDeviceIDOverride
-            )
+            let connection = try await resolveConnection(macDeviceID: normalizedMacDeviceIDOverride)
+            let task = openSession(connection: connection)
+            try await sendSessionResume(task: task, connection: connection)
+
             daemonHealth = connection.daemonHealth
             resolvedSession = connection.resolvedSession
+            currentConnection = connection
+            webSocketTask = task
+            isConnected = true
 
-            let task = openSession(connection: connection)
-            defer {
-                task.cancel(with: URLSessionWebSocketTask.CloseCode.normalClosure, reason: nil)
-            }
-
-            try await sendSessionResume(task: task, connection: connection)
+            startReceiveLoop(task: task)
             try await sendThreadListRequest(task: task)
-
-            var sentRunStart = false
-            var sentCatchUp = false
-
-            while let frame = try await receiveFrame(task: task) {
-                timeline = apply(frame, to: timeline)
-
-                if case .threadListSnapshot = frame, !sentRunStart {
-                    sentRunStart = true
-                    try await sendRunStart(task: task, prompt: prompt)
-                }
-
-                if case let .runCompletion(threadID, _, _, _, _) = frame, !sentCatchUp {
-                    sentCatchUp = true
-                    try await sendThreadCatchUp(task: task, threadID: threadID)
-                }
-
-                if case .threadCatchUpBatch = frame {
-                    break
-                }
-            }
         } catch {
+            teardownConnection()
             lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func disconnect() {
+        didRequestDisconnect = true
+        receiveLoopTask?.cancel()
+        receiveLoopTask = nil
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        teardownConnection()
+    }
+
+    func refreshThreads() async {
+        guard let task = webSocketTask, isConnected else {
+            await connect()
+            return
+        }
+
+        do {
+            try await sendThreadListRequest(task: task)
+        } catch {
+            handleTransportFailure(error)
+        }
+    }
+
+    func sendPrompt() async {
+        if !isConnected {
+            await connect()
+        }
+
+        guard let task = webSocketTask, isConnected else {
+            return
+        }
+
+        guard !isRunning else {
+            return
+        }
+
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            lastErrorMessage = "Prompt cannot be empty."
+            return
+        }
+
+        lastErrorMessage = nil
+        timeline.didReceiveRunCompletion = false
+        timeline.didReceiveCatchUpBatch = false
+
+        do {
+            try await sendRunStart(
+                task: task,
+                prompt: trimmedPrompt,
+                threadID: timeline.latestThreadID ?? activeThreadID ?? ""
+            )
+        } catch {
+            handleTransportFailure(error)
+        }
+    }
+
+    func interruptCurrentRun() async {
+        guard let task = webSocketTask,
+              let threadID = activeThreadID,
+              let turnID = activeTurnID else {
+            return
+        }
+
+        do {
+            try await sendRunInterrupt(task: task, threadID: threadID, turnID: turnID)
+        } catch {
+            handleTransportFailure(error)
         }
     }
 }
 
 private extension CodexV2PreviewClient {
     func fetchDaemonHealth() async throws -> CodexV2DaemonHealthSnapshot {
-        guard let daemonHealthURL = URL(string: daemonHealthURLString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let daemonHealthURL = URL(
+            string: daemonHealthURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
             throw URLError(.badURL)
         }
 
@@ -192,8 +254,12 @@ private extension CodexV2PreviewClient {
     func resolveConnection(
         macDeviceID: String? = nil
     ) async throws -> CodexV2ResolvedConnection {
-        guard let relayHTTPBaseURL = URL(string: relayHTTPBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let relayWSBaseURL = URL(string: relayWSBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let relayHTTPBaseURL = URL(
+            string: relayHTTPBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        ),
+        let relayWSBaseURL = URL(
+            string: relayWSBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        ) else {
             throw URLError(.badURL)
         }
 
@@ -223,12 +289,59 @@ private extension CodexV2PreviewClient {
         )
     }
 
-    func openSession(
-        connection: CodexV2ResolvedConnection
-    ) -> URLSessionWebSocketTask {
+    func openSession(connection: CodexV2ResolvedConnection) -> URLSessionWebSocketTask {
         let task = urlSession.webSocketTask(with: connection.websocketURL)
         task.resume()
         return task
+    }
+
+    func startReceiveLoop(task: URLSessionWebSocketTask) {
+        receiveLoopTask?.cancel()
+        receiveLoopTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            do {
+                while !Task.isCancelled, self.webSocketTask === task {
+                    guard let frame = try await self.receiveFrame(task: task) else {
+                        continue
+                    }
+                    await self.handle(frame: frame, task: task)
+                }
+            } catch {
+                guard !Task.isCancelled, !didRequestDisconnect else {
+                    return
+                }
+                handleTransportFailure(error)
+            }
+        }
+    }
+
+    func handle(frame: CodexV2ServerFrame, task: URLSessionWebSocketTask) async {
+        timeline = apply(frame, to: timeline)
+
+        switch frame {
+        case let .runStarted(threadID, turnID, _, _):
+            activeThreadID = threadID
+            activeTurnID = turnID
+            latestTurnID = turnID
+            isRunning = true
+        case let .runCompletion(threadID, turnID, _, _, _):
+            activeThreadID = threadID
+            activeTurnID = nil
+            latestTurnID = turnID
+            isRunning = false
+            do {
+                try await sendThreadCatchUp(task: task, threadID: threadID)
+            } catch {
+                handleTransportFailure(error)
+            }
+        case let .threadCatchUpBatch(threadID, _, _, _):
+            activeThreadID = threadID
+        case let .error(_, message, _):
+            lastErrorMessage = message
+        case .sessionReady, .threadListSnapshot, .reasoning, .assistantText:
+            break
+        }
     }
 
     func sendSessionResume(
@@ -267,6 +380,19 @@ private extension CodexV2PreviewClient {
         ))
     }
 
+    func sendRunInterrupt(
+        task: URLSessionWebSocketTask,
+        threadID: String,
+        turnID: String
+    ) async throws {
+        try await task.send(.data(
+            CodexV2PreviewProtoCodec.makeRunInterruptRequestFrame(
+                threadID: threadID,
+                turnID: turnID
+            )
+        ))
+    }
+
     func sendThreadCatchUp(
         task: URLSessionWebSocketTask,
         threadID: String,
@@ -280,9 +406,7 @@ private extension CodexV2PreviewClient {
         ))
     }
 
-    func receiveFrame(
-        task: URLSessionWebSocketTask
-    ) async throws -> CodexV2ServerFrame? {
+    func receiveFrame(task: URLSessionWebSocketTask) async throws -> CodexV2ServerFrame? {
         let message = try await task.receive()
         switch message {
         case .data(let data):
@@ -308,6 +432,8 @@ private extension CodexV2PreviewClient {
             next.didReceiveThreadList = true
         case let .runStarted(threadID, _, _, _):
             next.latestThreadID = threadID
+            next.didReceiveRunCompletion = false
+            next.didReceiveCatchUpBatch = false
         case .runCompletion:
             next.didReceiveRunCompletion = true
         case let .threadCatchUpBatch(threadID, _, _, _):
@@ -318,6 +444,20 @@ private extension CodexV2PreviewClient {
         }
 
         return next
+    }
+
+    func handleTransportFailure(_ error: Error) {
+        lastErrorMessage = error.localizedDescription
+        teardownConnection()
+    }
+
+    func teardownConnection() {
+        isConnecting = false
+        isConnected = false
+        isRunning = false
+        activeTurnID = nil
+        currentConnection = nil
+        webSocketTask = nil
     }
 
     func validateHTTP(_ response: URLResponse) throws {
