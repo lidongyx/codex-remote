@@ -57,6 +57,8 @@ struct ContentView: View {
     @State private var sidebarGestureAutoCommitted = false
     @AppStorage("codex.hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("codex.whatsNew.lastPresentedVersion") private var lastPresentedWhatsNewVersion = ""
+    @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
+    @State private var isShowingV2Workspace = false
 
     private let sidebarWidth: CGFloat = 330
     // Lets the drawer gesture start a bit inside the content instead of only on the bezel edge.
@@ -126,16 +128,27 @@ struct ContentView: View {
                     from: previousThread?.id,
                     to: thread?.id
                 )
+                if thread != nil {
+                    isShowingV2Workspace = false
+                }
                 codex.activeThreadId = thread?.id
             }
             .onChange(of: codex.activeThreadId) { _, activeThreadId in
                 debugSidebarLog("activeThreadId changed to=\(activeThreadId ?? "nil")")
+                guard !isShowingV2Workspace else {
+                    return
+                }
                 guard let activeThreadId,
                       let matchingThread = codex.threads.first(where: { $0.id == activeThreadId }),
                       selectedThread?.id != matchingThread.id else {
                     return
                 }
                 selectedThread = matchingThread
+            }
+            .onChange(of: v2WorkspaceEnabled) { _, isEnabled in
+                if !isEnabled, isShowingV2Workspace {
+                    isShowingV2Workspace = false
+                }
             }
             .onChange(of: codex.threads) { _, threads in
                 debugSidebarLog("threads changed count=\(threads.count) sidebarOpen=\(isSidebarOpen) prewarmed=\(isSidebarPrewarmed)")
@@ -351,11 +364,16 @@ struct ContentView: View {
                         selectedThread: $selectedThread,
                         showSettings: $showSettings,
                         isSearchActive: $isSearchActive,
+                        showsV2WorkspaceButton: v2WorkspaceEnabled,
+                        isV2WorkspaceSelected: isShowingV2Workspace,
                         showsInlineCloseButton: shouldUseFullWidthSidebar,
                         isVisible: sidebarVisible,
                         onClose: { closeSidebar() },
                         onOpenThread: { thread in
                             openThreadFromSidebar(thread)
+                        },
+                        onOpenV2Workspace: {
+                            openV2Workspace()
                         }
                     )
                     .frame(width: currentSidebarWidth)
@@ -405,7 +423,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        if let thread = selectedThread {
+        if isShowingV2Workspace {
+            CodexV2WorkspaceView()
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        hamburgerButton
+                    }
+                }
+        } else if let thread = selectedThread {
             TurnView(
                 thread: thread,
                 isWakingMacDisplayRecovery: isWakingSavedMacDisplay
@@ -454,6 +479,23 @@ struct ContentView: View {
                     if codex.hasReconnectCandidate {
                         reconnectSecondaryActions
                     }
+                }
+
+                if v2WorkspaceEnabled {
+                    Button {
+                        openV2Workspace()
+                    } label: {
+                        Text("Open Version 2.0 Workspace")
+                            .font(AppFont.subheadline(weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.primary.opacity(0.08))
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
             } footer: {
                 if codex.hasReconnectCandidate && !codex.isConnected {
@@ -769,10 +811,21 @@ struct ContentView: View {
             closeSidebar()
         }
 
+        isShowingV2Workspace = false
         selectedThread = thread
         codex.activeThreadId = thread.id
         codex.markThreadAsViewed(thread.id)
         codex.requestImmediateActiveThreadSync(threadId: thread.id)
+    }
+
+    private func openV2Workspace() {
+        if isSidebarOpen || sidebarDragOffset > 0 {
+            closeSidebar()
+        }
+
+        selectedThread = nil
+        codex.activeThreadId = nil
+        isShowingV2Workspace = true
     }
 
     // Keeps first-run installs in the scanner by default, while still letting users back out later.
@@ -1371,6 +1424,14 @@ struct ContentView: View {
 
     // Keeps selected thread coherent with server list updates.
     private func syncSelectedThread(with threads: [CodexThread]) {
+        if isShowingV2Workspace {
+            if let selected = selectedThread,
+               !threads.contains(where: { $0.id == selected.id }) {
+                selectedThread = nil
+            }
+            return
+        }
+
         if let selected = selectedThread,
            !threads.contains(where: { $0.id == selected.id }) {
             if codex.activeThreadId == selected.id {

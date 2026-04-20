@@ -13,11 +13,14 @@ struct SidebarView: View {
     @Binding var selectedThread: CodexThread?
     @Binding var showSettings: Bool
     @Binding var isSearchActive: Bool
+    var showsV2WorkspaceButton: Bool = false
+    var isV2WorkspaceSelected: Bool = false
     var showsInlineCloseButton: Bool = false
     var isVisible: Bool = true
 
     let onClose: () -> Void
     let onOpenThread: (CodexThread) -> Void
+    let onOpenV2Workspace: () -> Void
 
     @State private var searchText = ""
     @State private var isCreatingThread = false
@@ -56,6 +59,15 @@ struct SidebarView: View {
             )
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
+
+            if showsV2WorkspaceButton {
+                SidebarV2WorkspaceButton(
+                    isSelected: isV2WorkspaceSelected,
+                    action: handleOpenV2WorkspaceTap
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+            }
 
             SidebarThreadListView(
                 isFiltering: !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -304,6 +316,11 @@ struct SidebarView: View {
         onClose()
     }
 
+    private func handleOpenV2WorkspaceTap() {
+        searchText = ""
+        onOpenV2Workspace()
+    }
+
     // Archives every live chat in the selected project group and clears the current selection if needed.
     private func archivePendingProjectGroup() {
         guard let group = projectGroupPendingArchive else { return }
@@ -452,6 +469,41 @@ struct SidebarView: View {
     private func debugSidebarLog(_ message: String) {
         sidebarDebugSequence += 1
         print("[SidebarData] #\(sidebarDebugSequence) \(message)")
+    }
+}
+
+private struct SidebarV2WorkspaceButton: View {
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: {
+            HapticFeedback.shared.triggerImpactFeedback()
+            action()
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .font(AppFont.title3(weight: .regular))
+                Text("Version 2.0")
+                    .font(AppFont.body(weight: .medium))
+                Spacer()
+                if isSelected {
+                    Text("Open")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isSelected ? Color(.secondarySystemFill) : Color.primary.opacity(0.05))
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

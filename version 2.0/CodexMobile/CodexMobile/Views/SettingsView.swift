@@ -860,37 +860,46 @@ private struct SettingsAboutCard: View {
 }
 
 private struct SettingsV2PreviewCard: View {
+    @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
     @State private var isShowingV2Preview = false
+    @State private var isShowingV2Workspace = false
 
     var body: some View {
         SettingsCard(title: "Version 2.0") {
-            Text("Preview the relay-backed protobuf client chain inside the iOS app snapshot without touching the legacy chat flow.")
+            Text("Expose the new `codexd` + V2 relay path inside the main app while keeping the current bridge workflow available beside it.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 
-            Button {
+            Toggle("Show V2 workspace in app", isOn: $v2WorkspaceEnabled)
+                .tint(Color(.plan))
+
+            Text(v2WorkspaceEnabled
+                 ? "The sidebar and home screen will show a Version 2.0 workspace entry."
+                 : "The main app will stay on the legacy bridge flow only.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            SettingsButton("Open V2 Workspace") {
+                HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                isShowingV2Workspace = true
+            }
+
+            SettingsButton("Open V2 Debug") {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
                 isShowingV2Preview = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "bolt.horizontal.circle")
-                        .font(AppFont.subheadline(weight: .medium))
-                    Text("Open V2 Preview")
-                        .font(AppFont.subheadline(weight: .medium))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(AppFont.caption(weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .foregroundStyle(.primary)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                )
             }
-            .buttonStyle(.plain)
+        }
+        .fullScreenCover(isPresented: $isShowingV2Workspace) {
+            NavigationStack {
+                CodexV2WorkspaceView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                isShowingV2Workspace = false
+                            }
+                        }
+                    }
+            }
         }
         .fullScreenCover(isPresented: $isShowingV2Preview) {
             CodexV2DebugView()
