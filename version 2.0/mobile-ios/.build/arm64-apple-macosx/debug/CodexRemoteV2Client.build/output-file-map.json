@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/primary.swiftdeps"
+  },
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/CodexRemoteV2Client.swift": {
+    "dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.d",
+    "object": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swift.o",
+    "swiftmodule": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client~partial.swiftmodule",
+    "swift-dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swiftdeps",
+    "diagnostics": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.dia"
+  },
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2Models.swift": {
+    "dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.d",
+    "object": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swift.o",
+    "swiftmodule": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swiftdeps",
+    "diagnostics": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.dia"
+  },
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2ProtoCodec.swift": {
+    "dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.d",
+    "object": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swift.o",
+    "swiftmodule": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec~partial.swiftmodule",
+    "swift-dependencies": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swiftdeps",
+    "diagnostics": "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.dia"
+  }
+}

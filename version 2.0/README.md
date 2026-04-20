@@ -55,10 +55,11 @@ Already implemented:
   - reasoning delta
   - assistant delta
   - run completion
+- Swift V2 client prototype in `mobile-ios/`
 
 Not implemented yet:
 
-- iOS V2 client integration
+- integration into the real iOS app UI
 - final binary application protocol
 - real Codex runtime integration
 - final trust bootstrap flow
@@ -88,5 +89,6 @@ What this validates today:
 - relay can resolve the current live remote session for the daemon
 - a phone-side probe can connect through the relay and receive protobuf session responses
 - a phone-side probe can start a placeholder remote run and receive streamed run lifecycle events
+- a Swift client prototype can execute the same relay-backed remote run lifecycle
 
 The scripts are for development only.

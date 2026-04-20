@@ -1,0 +1,103 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "CodexRemoteV2Client-arm64-apple-macosx-debug.module": ["<CodexRemoteV2Client-arm64-apple-macosx-debug.module>"]
+  "CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe": ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe>"]
+  "CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module": ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<CodexRemoteV2Client-arm64-apple-macosx-debug.module>","<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe>","<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module>"]
+  "test": ["<CodexRemoteV2Client-arm64-apple-macosx-debug.module>","<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe>","<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module>"]
+default: "main"
+nodes:
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2ClientDemo/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo":
+    is-mutated: true
+commands:
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/CodexRemoteV2Client.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2Models.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2ProtoCodec.swift"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/sources"]
+    description: "Write auxiliary file /Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/sources"
+
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo-entitlement.plist"]
+    description: "Write auxiliary file /Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo-entitlement.plist"
+
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2ClientDemo/main.swift"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/sources"]
+    description: "Write auxiliary file /Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/sources"
+
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/main.swift.o"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.product/Objects.LinkFileList"
+
+  "/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<CodexRemoteV2Client-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2Client.swiftmodule"]
+    outputs: ["<CodexRemoteV2Client-arm64-apple-macosx-debug.module>"]
+
+  "<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe>":
+    tool: phony
+    inputs: ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    outputs: ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe>"]
+
+  "<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module>":
+    tool: phony
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/main.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2ClientDemo.swiftmodule"]
+    outputs: ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module>"]
+
+  "C.CodexRemoteV2Client-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/CodexRemoteV2Client.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2Models.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/V2ProtoCodec.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/sources"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2Client.swiftmodule"]
+    description: "Compiling Swift Module 'CodexRemoteV2Client' (3 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","CodexRemoteV2Client","-emit-dependencies","-emit-module","-emit-module-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2Client.swiftmodule","-output-file-map","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/sources","-I","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j12","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/include/CodexRemoteV2Client-Swift.h","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","mobile_ios"]
+
+  "C.CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe":
+    tool: shell
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/CodexRemoteV2Client.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2Models.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2Client.build/V2ProtoCodec.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/main.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.product/Objects.LinkFileList"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug","-o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo","-module-name","CodexRemoteV2ClientDemo","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_CodexRemoteV2ClientDemo_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-Xlinker","-add_ast_path","-Xlinker","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2Client.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2ClientDemo.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo-entitlement.plist"]
+    outputs: ["<CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo-entitlement.plist","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo"]
+
+  "C.CodexRemoteV2ClientDemo-arm64-apple-macosx-debug.module":
+    tool: shell
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2ClientDemo/main.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2Client.swiftmodule","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/sources"]
+    outputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/main.swift.o","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2ClientDemo.swiftmodule"]
+    description: "Compiling Swift Module 'CodexRemoteV2ClientDemo' (1 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","CodexRemoteV2ClientDemo","-emit-dependencies","-emit-module","-emit-module-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules/CodexRemoteV2ClientDemo.swiftmodule","-output-file-map","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/output-file-map.json","-incremental","-c","@/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/CodexRemoteV2ClientDemo.build/sources","-I","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j12","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","CodexRemoteV2ClientDemo_main","-parse-as-library","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","mobile_ios"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2Client/","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Sources/CodexRemoteV2ClientDemo/","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Package.swift","/Users/lidong/Documents/codex-remote/version 2.0/mobile-ios/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
