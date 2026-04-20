@@ -1,0 +1,5 @@
+// Local-only signing overrides for personal device builds.
+// This file is gitignored and should stay machine-specific.
+
+REMODEX_DEVELOPMENT_TEAM = DD28344VDK
+REMODEX_IOS_BUNDLE_IDENTIFIER = com.lidongyx.remodexlocal
