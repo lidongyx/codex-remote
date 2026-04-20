@@ -37,3 +37,6 @@ curl --silent --fail \
   -H 'content-type: application/json' \
   -d "{\"mac_device_id\":\"${MAC_DEVICE_ID}\",\"phone_device_id\":\"phone-smoke-1\"}"
 echo
+
+echo "[v2] protobuf application probe"
+cargo run -p codex-phone-probe-rs --quiet -- "${MAC_DEVICE_ID}"

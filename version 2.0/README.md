@@ -78,5 +78,6 @@ What this validates today:
 - daemon process is alive
 - daemon registered remote presence with the relay
 - relay can resolve the current live remote session for the daemon
+- a phone-side probe can connect through the relay and receive protobuf session responses
 
 The scripts are for development only.

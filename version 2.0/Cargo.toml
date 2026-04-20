@@ -1,5 +1,7 @@
 [workspace]
 members = [
+  "codex-proto",
+  "codex-phone-probe-rs",
   "codex-relay-rs",
   "codexd",
 ]
@@ -23,3 +25,4 @@ tokio-tungstenite = { version = "=0.21.0", features = ["rustls-tls-webpki-roots"
 tracing = "=0.1.40"
 tracing-subscriber = { version = "=0.3.18", features = ["env-filter"] }
 uuid = { version = "=1.8.0", features = ["serde", "v4"] }
+prost = "=0.13.5"

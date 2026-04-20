@@ -1,7 +1,13 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use codex_proto::session::SessionReady;
+use codex_proto::thread::ThreadListSnapshot;
+use codex_proto::transport::client_frame::Payload as ClientPayload;
+use codex_proto::transport::server_frame::Payload as ServerPayload;
+use codex_proto::transport::{ClientFrame, ServerFrame};
 use futures_util::{SinkExt, StreamExt};
+use prost::Message as ProstMessage;
 use reqwest::Client;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -144,7 +150,7 @@ impl RelayClient {
                     if message.is_close() {
                         break;
                     }
-                    if let Some(response) = self.handle_incoming_probe_message(&session_id, message) {
+                    if let Some(response) = self.handle_incoming_message(&session_id, message) {
                         if outbound_tx.send(response).is_err() {
                             break;
                         }
@@ -195,13 +201,16 @@ impl RelayClient {
         Ok(())
     }
 
-    // Temporary dev probe surface while the typed binary application protocol is being wired.
-    fn handle_incoming_probe_message(
+    // Temporary mixed-mode surface while the binary protocol is being wired end to end.
+    fn handle_incoming_message(
         &self,
         session_id: &str,
         message: tokio_tungstenite::tungstenite::Message,
     ) -> Option<tokio_tungstenite::tungstenite::Message> {
         match message {
+            tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+                self.handle_incoming_binary_frame(session_id, &bytes)
+            }
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 let trimmed = text.trim();
                 if trimmed.eq_ignore_ascii_case("ping") {
@@ -223,6 +232,46 @@ impl RelayClient {
                 }
 
                 None
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_incoming_binary_frame(
+        &self,
+        session_id: &str,
+        bytes: &[u8],
+    ) -> Option<tokio_tungstenite::tungstenite::Message> {
+        let frame = ClientFrame::decode(bytes).ok()?;
+        match frame.payload? {
+            ClientPayload::SessionResume(request) => {
+                let response = ServerFrame {
+                    payload: Some(ServerPayload::SessionReady(SessionReady {
+                        session_id: session_id.to_string(),
+                        connection_mode: "relay".to_string(),
+                        global_sequence: request.global_sequence,
+                    })),
+                };
+                let mut encoded = Vec::new();
+                response.encode(&mut encoded).ok()?;
+                Some(tokio_tungstenite::tungstenite::Message::Binary(
+                    encoded,
+                ))
+            }
+            ClientPayload::ThreadListRequest(request) => {
+                let response = ServerFrame {
+                    payload: Some(ServerPayload::ThreadListSnapshot(
+                        ThreadListSnapshot {
+                            global_sequence: request.since_global_sequence,
+                            threads: Vec::new(),
+                        },
+                    )),
+                };
+                let mut encoded = Vec::new();
+                response.encode(&mut encoded).ok()?;
+                Some(tokio_tungstenite::tungstenite::Message::Binary(
+                    encoded,
+                ))
             }
             _ => None,
         }
