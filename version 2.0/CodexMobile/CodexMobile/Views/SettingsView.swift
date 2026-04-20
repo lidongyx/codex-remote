@@ -872,15 +872,15 @@ private struct SettingsV2WorkspaceCard: View {
 
     var body: some View {
         SettingsCard(title: "Version 2.0") {
-            Text("The new path runs through `codexd` and the V2 relay. It stays separate from the legacy bridge so users can choose when to switch.")
+            Text("The beta path runs through `codexd` and the V2 relay. It stays separate from the legacy bridge so users can choose when to switch.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 
-            Toggle("Show V2 workspace in app", isOn: $v2WorkspaceEnabled)
+            Toggle("Show V2 chat beta in app", isOn: $v2WorkspaceEnabled)
                 .tint(Color(.plan))
 
             Text(v2WorkspaceEnabled
-                 ? "The sidebar and home screen will show a Version 2.0 workspace entry beside the legacy flow."
+                 ? "The sidebar and home screen will show a V2 beta chat entry beside the legacy flow."
                  : "The main app will stay on the legacy bridge flow only.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
@@ -903,12 +903,12 @@ private struct SettingsV2WorkspaceCard: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } else {
-                Text("Open the V2 workspace to connect, refresh threads, and validate the new stack.")
+                Text("Open the V2 chat beta to connect, refresh chats, and validate the new stack.")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
             }
 
-            SettingsButton("Open V2 Workspace") {
+            SettingsButton("Open V2 Chat Beta") {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
                 isShowingV2Workspace = true
             }

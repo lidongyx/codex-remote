@@ -229,14 +229,15 @@ enum V2ProtoCodec {
         var reader = V2ProtoReader(data: data)
         var threadID = ""
         var latestThreadSequence: UInt64 = 0
-        var eventCount = 0
+        var events: [V2ThreadEvent] = []
         var hasMore = false
 
         while let field = try reader.nextField() {
             switch (field.fieldNumber, field.wireType) {
             case (1, .lengthDelimited): threadID = field.payload.stringValue
             case (2, .varint): latestThreadSequence = field.varintValue
-            case (3, .lengthDelimited): eventCount += 1
+            case (3, .lengthDelimited):
+                events.append(try decodeThreadEvent(field.payload))
             case (4, .varint): hasMore = field.varintValue != 0
             default: break
             }
@@ -245,9 +246,106 @@ enum V2ProtoCodec {
         return .threadCatchUpBatch(
             threadID: threadID,
             latestThreadSequence: latestThreadSequence,
-            eventCount: eventCount,
+            events: events,
             hasMore: hasMore
         )
+    }
+
+    private static func decodeThreadEvent(_ data: Data) throws -> V2ThreadEvent {
+        var reader = V2ProtoReader(data: data)
+        var sequence: UInt64 = 0
+        var payloadFieldNumber = 0
+        var payloadData = Data()
+
+        while let field = try reader.nextField() {
+            switch (field.fieldNumber, field.wireType) {
+            case (1, .varint):
+                sequence = field.varintValue
+            case (10, .lengthDelimited), (11, .lengthDelimited), (12, .lengthDelimited),
+                 (13, .lengthDelimited), (14, .lengthDelimited):
+                payloadFieldNumber = field.fieldNumber
+                payloadData = field.payload
+            default:
+                break
+            }
+        }
+
+        let payload = try decodeThreadEventPayload(
+            fieldNumber: payloadFieldNumber,
+            data: payloadData
+        )
+        return V2ThreadEvent(sequence: sequence, payload: payload)
+    }
+
+    private static func decodeThreadEventPayload(
+        fieldNumber: Int,
+        data: Data
+    ) throws -> V2ThreadEventPayload {
+        var reader = V2ProtoReader(data: data)
+
+        switch fieldNumber {
+        case 10:
+            var turnID = ""
+            var text = ""
+            while let field = try reader.nextField() {
+                switch (field.fieldNumber, field.wireType) {
+                case (1, .lengthDelimited): turnID = field.payload.stringValue
+                case (2, .lengthDelimited): text = field.payload.stringValue
+                default: break
+                }
+            }
+            return .userMessage(turnID: turnID, text: text)
+        case 11:
+            var turnID = ""
+            var delta = ""
+            while let field = try reader.nextField() {
+                switch (field.fieldNumber, field.wireType) {
+                case (1, .lengthDelimited): turnID = field.payload.stringValue
+                case (2, .lengthDelimited): delta = field.payload.stringValue
+                default: break
+                }
+            }
+            return .assistantDelta(turnID: turnID, delta: delta)
+        case 12:
+            var turnID = ""
+            var itemID = ""
+            var delta = ""
+            while let field = try reader.nextField() {
+                switch (field.fieldNumber, field.wireType) {
+                case (1, .lengthDelimited): turnID = field.payload.stringValue
+                case (2, .lengthDelimited): itemID = field.payload.stringValue
+                case (3, .lengthDelimited): delta = field.payload.stringValue
+                default: break
+                }
+            }
+            return .reasoningDelta(turnID: turnID, itemID: itemID, delta: delta)
+        case 13:
+            var turnID = ""
+            var callID = ""
+            var delta = ""
+            while let field = try reader.nextField() {
+                switch (field.fieldNumber, field.wireType) {
+                case (1, .lengthDelimited): turnID = field.payload.stringValue
+                case (2, .lengthDelimited): callID = field.payload.stringValue
+                case (3, .lengthDelimited): delta = field.payload.stringValue
+                default: break
+                }
+            }
+            return .toolDelta(turnID: turnID, callID: callID, delta: delta)
+        case 14:
+            var turnID = ""
+            var status = ""
+            while let field = try reader.nextField() {
+                switch (field.fieldNumber, field.wireType) {
+                case (1, .lengthDelimited): turnID = field.payload.stringValue
+                case (2, .lengthDelimited): status = field.payload.stringValue
+                default: break
+                }
+            }
+            return .statusChanged(turnID: turnID, status: status)
+        default:
+            throw V2ProtoCodecError.unsupportedServerPayload
+        }
     }
 
     private static func decodeError(_ data: Data) throws -> V2ServerFrame {

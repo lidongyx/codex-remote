@@ -46,6 +46,7 @@ struct RuntimeState {
 struct ActiveRun {
     turn_id: String,
     abort_handle: AbortHandle,
+    reasoning_item_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -226,6 +227,7 @@ impl RuntimeSupervisor {
                 ActiveRun {
                     turn_id,
                     abort_handle: handle.abort_handle(),
+                    reasoning_item_id: None,
                 },
             );
             state.codex_process_online = true;
@@ -554,7 +556,19 @@ impl RuntimeSupervisor {
         delta: String,
         outbound_tx: mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>,
     ) {
-        let item_id = format!("reasoning-{}", Uuid::new_v4());
+        let item_id = {
+            let mut state = self.inner.lock().await;
+            let Some(active_run) = state.active_runs_by_thread.get_mut(thread_id) else {
+                return;
+            };
+            if active_run.turn_id != turn_id {
+                return;
+            }
+            active_run
+                .reasoning_item_id
+                .get_or_insert_with(|| format!("reasoning-{}", Uuid::new_v4()))
+                .clone()
+        };
         let reasoning_sequence = self.next_global_sequence().await;
         let reasoning = ServerFrame {
             payload: Some(ServerPayload::RunEvent(RunEvent {

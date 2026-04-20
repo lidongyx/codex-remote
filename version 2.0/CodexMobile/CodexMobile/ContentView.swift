@@ -55,6 +55,7 @@ struct ContentView: View {
     @State private var activeSidebarGestureDebugID: Int?
     @State private var lastSidebarGestureLogBucket: Int?
     @State private var sidebarGestureAutoCommitted = false
+    @State private var activeSidebarRoute: String?
     @AppStorage("codex.hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("codex.whatsNew.lastPresentedVersion") private var lastPresentedWhatsNewVersion = ""
     @AppStorage(CodexV2WorkspacePreference.storageKey) private var v2WorkspaceEnabled = false
@@ -97,12 +98,14 @@ struct ContentView: View {
             }
             .onChange(of: showSettings) { _, show in
                 if show {
+                    activeSidebarRoute = "settings"
                     navigationPath.append("settings")
                     showSettings = false
                 }
             }
             .onChange(of: showV2Workspace) { _, show in
                 if show {
+                    activeSidebarRoute = "v2workspace"
                     navigationPath.append("v2workspace")
                     showV2Workspace = false
                 }
@@ -132,6 +135,9 @@ struct ContentView: View {
             }
             .onChange(of: navigationPath) { _, _ in
                 debugSidebarLog("navigation path changed count=\(navigationPath.count) sidebarOpen=\(isSidebarOpen)")
+                if navigationPath.count == 0 {
+                    activeSidebarRoute = nil
+                }
                 if isSidebarOpen {
                     closeSidebar()
                 }
@@ -157,6 +163,9 @@ struct ContentView: View {
                 if !isEnabled {
                     shouldNavigateToV2WorkspaceAfterSidebarCloses = false
                     showV2Workspace = false
+                    if activeSidebarRoute == "v2workspace" {
+                        activeSidebarRoute = nil
+                    }
                 }
             }
             .onChange(of: codex.threads) { _, threads in
@@ -374,7 +383,7 @@ struct ContentView: View {
                         showSettings: $showSettings,
                         isSearchActive: $isSearchActive,
                         showsV2WorkspaceButton: v2WorkspaceEnabled,
-                        isV2WorkspaceSelected: false,
+                        isV2WorkspaceSelected: activeSidebarRoute == "v2workspace",
                         showsInlineCloseButton: shouldUseFullWidthSidebar,
                         isVisible: sidebarVisible,
                         onClose: { closeSidebar() },
@@ -490,7 +499,7 @@ struct ContentView: View {
                     Button {
                         openV2Workspace()
                     } label: {
-                        Text("Open Version 2.0 Workspace")
+                        Text("Open V2 Chat Beta")
                             .font(AppFont.subheadline(weight: .semibold))
                             .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
@@ -816,6 +825,7 @@ struct ContentView: View {
             closeSidebar()
         }
 
+        activeSidebarRoute = nil
         selectedThread = thread
         codex.activeThreadId = thread.id
         codex.markThreadAsViewed(thread.id)
@@ -823,6 +833,13 @@ struct ContentView: View {
     }
 
     private func openV2Workspace() {
+        if activeSidebarRoute == "v2workspace" {
+            if isSidebarOpen || sidebarDragOffset > 0 {
+                closeSidebar()
+            }
+            return
+        }
+
         if isSidebarOpen || sidebarDragOffset > 0 {
             shouldNavigateToV2WorkspaceAfterSidebarCloses = true
             closeSidebar()

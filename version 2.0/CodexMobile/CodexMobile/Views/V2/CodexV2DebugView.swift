@@ -342,8 +342,8 @@ private extension CodexV2ServerFrame {
             return "thread=\(threadID)\nturn=\(turnID)\nsequence=\(globalSequence)\n\(delta)"
         case let .runCompletion(threadID, turnID, globalSequence, result, errorMessage):
             return "thread=\(threadID)\nturn=\(turnID)\nsequence=\(globalSequence)\nresult=\(result)\nerror=\(errorMessage)"
-        case let .threadCatchUpBatch(threadID, latestThreadSequence, eventCount, hasMore):
-            return "thread=\(threadID)\nlatestThreadSequence=\(latestThreadSequence)\neventCount=\(eventCount)\nhasMore=\(hasMore)"
+        case let .threadCatchUpBatch(threadID, latestThreadSequence, events, hasMore):
+            return "thread=\(threadID)\nlatestThreadSequence=\(latestThreadSequence)\neventCount=\(events.count)\nhasMore=\(hasMore)"
         case let .error(code, message, retryable):
             return "code=\(code)\nretryable=\(retryable)\n\(message)"
         }

@@ -36,6 +36,15 @@ final class CodexV2PreviewClient {
         static let prompt = "Reply with a short V2 preview confirmation."
     }
 
+    private enum ReconnectDefaults {
+        static let backoffNanoseconds: [UInt64] = [
+            800_000_000,
+            1_600_000_000,
+            3_000_000_000,
+        ]
+        static let sleepChunkNanoseconds: UInt64 = 200_000_000
+    }
+
     private enum StorageKey {
         static let relayHTTPBaseURLString = "codex.v2Preview.relayHTTPBaseURLString"
         static let relayWSBaseURLString = "codex.v2Preview.relayWSBaseURLString"
@@ -68,9 +77,13 @@ final class CodexV2PreviewClient {
     private(set) var daemonHealth: CodexV2DaemonHealthSnapshot?
     private(set) var resolvedSession: CodexV2SessionResolveResponse?
     private(set) var timeline = CodexV2TimelineState()
+    private(set) var conversationState = CodexV2ConversationState()
+    private(set) var reconnectState: CodexV2ReconnectState = .idle
     private(set) var activeThreadID: String?
     private(set) var activeTurnID: String?
     private(set) var latestTurnID: String?
+    private(set) var isRestoringSelectedThread = false
+    private(set) var isStartingFreshConversation = false
     private(set) var selectedThreadID: String? {
         didSet {
             persist(selectedThreadID ?? "", forKey: StorageKey.selectedThreadID)
@@ -82,7 +95,9 @@ final class CodexV2PreviewClient {
     @ObservationIgnored private var currentConnection: CodexV2ResolvedConnection?
     @ObservationIgnored private var webSocketTask: URLSessionWebSocketTask?
     @ObservationIgnored private var receiveLoopTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var didRequestDisconnect = false
+    @ObservationIgnored private var isAppInForeground = true
 
     init(
         urlSession: URLSession = .shared,
@@ -123,12 +138,72 @@ final class CodexV2PreviewClient {
         selectedThreadID = storedSelectedThreadID.isEmpty ? nil : storedSelectedThreadID
     }
 
+    var isReconnecting: Bool {
+        reconnectState != .idle
+    }
+
+    var reconnectAttemptCount: Int {
+        reconnectState.attemptCount
+    }
+
+    var displayedConversationThreadID: String? {
+        if isStartingFreshConversation {
+            return conversationState.messagesByThreadID[CodexV2ConversationReducer.pendingThreadKey]?.isEmpty == false
+                ? CodexV2ConversationReducer.pendingThreadKey
+                : nil
+        }
+
+        if let selectedThreadID = normalizedIdentifier(selectedThreadID) {
+            return selectedThreadID
+        }
+
+        if let activeThreadID = normalizedIdentifier(activeThreadID) {
+            return activeThreadID
+        }
+
+        if conversationState.messagesByThreadID[CodexV2ConversationReducer.pendingThreadKey]?.isEmpty == false {
+            return CodexV2ConversationReducer.pendingThreadKey
+        }
+
+        return normalizedIdentifier(timeline.latestThreadID)
+    }
+
+    var currentConversationItems: [CodexV2ConversationItem] {
+        guard let displayedConversationThreadID else {
+            return []
+        }
+
+        return conversationState.messagesByThreadID[displayedConversationThreadID] ?? []
+    }
+
+    var selectedThreadSummary: CodexV2ThreadSummary? {
+        guard let selectedThreadID = normalizedIdentifier(selectedThreadID) else {
+            return nil
+        }
+
+        return timeline.threadSummaries.first(where: { $0.threadID == selectedThreadID })
+    }
+
+    var displayedThreadRecoverySnapshot: CodexV2ThreadRecoverySnapshot? {
+        guard let displayedConversationThreadID,
+              displayedConversationThreadID != CodexV2ConversationReducer.pendingThreadKey else {
+            return nil
+        }
+
+        return conversationState.recoveryByThreadID[displayedConversationThreadID]
+    }
+
     func clear() {
+        cancelReconnectLoop()
         lastErrorMessage = nil
         timeline = CodexV2TimelineState()
+        conversationState = CodexV2ConversationState()
+        reconnectState = .idle
         activeThreadID = nil
         activeTurnID = nil
         latestTurnID = nil
+        isRestoringSelectedThread = false
+        isStartingFreshConversation = false
         selectedThreadID = nil
     }
 
@@ -151,10 +226,43 @@ final class CodexV2PreviewClient {
         macDeviceIDOverride = macDeviceID ?? ""
     }
 
+    func setForegroundActive(_ isForeground: Bool) {
+        isAppInForeground = isForeground
+
+        guard isForeground,
+              isReconnecting,
+              !isConnected,
+              !isConnecting else {
+            return
+        }
+
+        ensureReconnectLoop()
+    }
+
+    func newConversation() {
+        isStartingFreshConversation = true
+        isRestoringSelectedThread = false
+        selectedThreadID = nil
+        activeThreadID = nil
+        activeTurnID = nil
+        isRunning = false
+        lastErrorMessage = nil
+    }
+
     func connect(resetTimeline: Bool = false) async {
+        cancelReconnectLoop()
+        await connect(resetTimeline: resetTimeline, isRecoveryAttempt: false)
+    }
+
+    private func connect(
+        resetTimeline: Bool,
+        isRecoveryAttempt: Bool
+    ) async {
         guard !isConnected, !isConnecting else { return }
         isConnecting = true
-        lastErrorMessage = nil
+        if !isRecoveryAttempt {
+            lastErrorMessage = nil
+        }
         didRequestDisconnect = false
 
         if resetTimeline {
@@ -173,21 +281,28 @@ final class CodexV2PreviewClient {
             currentConnection = connection
             webSocketTask = task
             isConnected = true
+            reconnectState = .idle
+            reconnectTask = nil
+            if !isStartingFreshConversation,
+               normalizedIdentifier(selectedThreadID) != nil || normalizedIdentifier(activeThreadID) != nil {
+                isRestoringSelectedThread = true
+            }
 
             startReceiveLoop(task: task)
             try await sendThreadListRequest(task: task)
         } catch {
-            teardownConnection()
+            teardownConnection(preserveRunState: isRecoveryAttempt)
             lastErrorMessage = error.localizedDescription
         }
     }
 
     func disconnect() {
         didRequestDisconnect = true
+        cancelReconnectLoop()
         receiveLoopTask?.cancel()
         receiveLoopTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
-        teardownConnection()
+        teardownConnection(preserveRunState: false)
     }
 
     func refreshThreads() async {
@@ -207,6 +322,9 @@ final class CodexV2PreviewClient {
         let normalizedThreadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedThreadID.isEmpty else { return }
 
+        isStartingFreshConversation = false
+        isRestoringSelectedThread = true
+        lastErrorMessage = nil
         selectedThreadID = normalizedThreadID
         activeThreadID = normalizedThreadID
 
@@ -215,7 +333,12 @@ final class CodexV2PreviewClient {
         }
 
         do {
-            try await sendThreadCatchUp(task: task, threadID: normalizedThreadID)
+            let sinceThreadSequence = catchUpStartSequence(for: normalizedThreadID)
+            try await sendThreadCatchUp(
+                task: task,
+                threadID: normalizedThreadID,
+                sinceThreadSequence: sinceThreadSequence
+            )
         } catch {
             handleTransportFailure(error)
         }
@@ -243,12 +366,21 @@ final class CodexV2PreviewClient {
         lastErrorMessage = nil
         timeline.didReceiveRunCompletion = false
         timeline.didReceiveCatchUpBatch = false
+        let targetThreadID = isStartingFreshConversation
+            ? ""
+            : (selectedThreadID ?? timeline.latestThreadID ?? activeThreadID ?? "")
+        let provisionalThreadID = normalizedIdentifier(targetThreadID)
+        _ = CodexV2ConversationReducer.recordOutgoingPrompt(
+            trimmedPrompt,
+            provisionalThreadID: provisionalThreadID,
+            in: &conversationState
+        )
 
         do {
             try await sendRunStart(
                 task: task,
                 prompt: trimmedPrompt,
-                threadID: selectedThreadID ?? timeline.latestThreadID ?? activeThreadID ?? ""
+                threadID: targetThreadID
             )
         } catch {
             handleTransportFailure(error)
@@ -266,6 +398,78 @@ final class CodexV2PreviewClient {
             try await sendRunInterrupt(task: task, threadID: threadID, turnID: turnID)
         } catch {
             handleTransportFailure(error)
+        }
+    }
+
+    @discardableResult
+    func applyFrameLocally(_ frame: CodexV2ServerFrame) -> String? {
+        timeline = apply(frame, to: timeline)
+        CodexV2ConversationReducer.apply(frame, to: &conversationState)
+
+        switch frame {
+        case let .runStarted(threadID, turnID, _, _):
+            activeThreadID = threadID
+            selectedThreadID = threadID
+            activeTurnID = turnID
+            latestTurnID = turnID
+            isRunning = true
+            isStartingFreshConversation = false
+            return nil
+        case let .runCompletion(threadID, turnID, _, _, _):
+            activeThreadID = threadID
+            selectedThreadID = threadID
+            activeTurnID = nil
+            latestTurnID = turnID
+            isRunning = false
+            return nil
+        case let .threadCatchUpBatch(threadID, _, _, hasMore):
+            activeThreadID = threadID
+            if normalizedIdentifier(selectedThreadID) == threadID {
+                isRestoringSelectedThread = hasMore
+            }
+            return hasMore ? threadID : nil
+        case let .error(code, message, _):
+            lastErrorMessage = message
+            CodexV2ConversationReducer.appendTransportError(
+                code: code,
+                message: message,
+                threadID: selectedThreadID ?? activeThreadID,
+                in: &conversationState
+            )
+            return nil
+        case let .threadListSnapshot(_, threads):
+            if let currentSelectedThreadID = normalizedIdentifier(selectedThreadID),
+               !threads.contains(where: { $0.threadID == currentSelectedThreadID }) {
+                selectedThreadID = nil
+            }
+
+            if !isStartingFreshConversation,
+               normalizedIdentifier(selectedThreadID) == nil {
+                selectedThreadID = threads.first?.threadID
+            }
+
+            let referenceThreadID = normalizedIdentifier(selectedThreadID)
+                ?? normalizedIdentifier(activeThreadID)
+            if let referenceThreadID,
+               let referenceThread = threads.first(where: { $0.threadID == referenceThreadID }) {
+                isRunning = referenceThread.isRunning
+                if !referenceThread.isRunning {
+                    activeTurnID = nil
+                }
+            } else if !threads.contains(where: { $0.isRunning }) {
+                isRunning = false
+                activeTurnID = nil
+            }
+
+            if let selectedThreadID = normalizedIdentifier(selectedThreadID),
+               threads.contains(where: { $0.threadID == selectedThreadID }),
+               shouldRequestCatchUpAfterThreadList(for: selectedThreadID) {
+                isRestoringSelectedThread = true
+                return selectedThreadID
+            }
+            return nil
+        case .sessionReady, .reasoning, .assistantText:
+            return nil
         }
     }
 }
@@ -366,46 +570,16 @@ private extension CodexV2PreviewClient {
     }
 
     func handle(frame: CodexV2ServerFrame, task: URLSessionWebSocketTask) async {
-        timeline = apply(frame, to: timeline)
-
-        switch frame {
-        case let .runStarted(threadID, turnID, _, _):
-            activeThreadID = threadID
-            selectedThreadID = threadID
-            activeTurnID = turnID
-            latestTurnID = turnID
-            isRunning = true
-        case let .runCompletion(threadID, turnID, _, _, _):
-            activeThreadID = threadID
-            selectedThreadID = threadID
-            activeTurnID = nil
-            latestTurnID = turnID
-            isRunning = false
+        if let threadIDToCatchUp = applyFrameLocally(frame) {
             do {
-                try await sendThreadCatchUp(task: task, threadID: threadID)
+                try await sendThreadCatchUp(
+                    task: task,
+                    threadID: threadIDToCatchUp,
+                    sinceThreadSequence: catchUpStartSequence(for: threadIDToCatchUp)
+                )
             } catch {
                 handleTransportFailure(error)
             }
-        case let .threadCatchUpBatch(threadID, _, _, _):
-            activeThreadID = threadID
-            selectedThreadID = threadID
-        case let .error(_, message, _):
-            lastErrorMessage = message
-        case let .threadListSnapshot(_, threads):
-            if selectedThreadID == nil {
-                selectedThreadID = threads.first?.threadID
-            }
-
-            if let selectedThreadID,
-               threads.contains(where: { $0.threadID == selectedThreadID }) {
-                do {
-                    try await sendThreadCatchUp(task: task, threadID: selectedThreadID)
-                } catch {
-                    handleTransportFailure(error)
-                }
-            }
-        case .sessionReady, .reasoning, .assistantText:
-            break
         }
     }
 
@@ -517,20 +691,123 @@ private extension CodexV2PreviewClient {
 
     func handleTransportFailure(_ error: Error) {
         lastErrorMessage = error.localizedDescription
-        teardownConnection()
+        receiveLoopTask?.cancel()
+        receiveLoopTask = nil
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        teardownConnection(preserveRunState: true)
+        guard !didRequestDisconnect else {
+            return
+        }
+        isRestoringSelectedThread = normalizedIdentifier(selectedThreadID) != nil
+            || normalizedIdentifier(activeThreadID) != nil
+        ensureReconnectLoop()
     }
 
-    func teardownConnection() {
+    func teardownConnection(preserveRunState: Bool) {
         isConnecting = false
         isConnected = false
-        isRunning = false
-        activeTurnID = nil
+        if !preserveRunState {
+            isRunning = false
+            activeTurnID = nil
+            isRestoringSelectedThread = false
+        }
         currentConnection = nil
         webSocketTask = nil
     }
 
+    func ensureReconnectLoop() {
+        guard reconnectTask == nil else {
+            return
+        }
+
+        reconnectTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            defer {
+                self.reconnectTask = nil
+            }
+
+            var attempt = 0
+
+            while !Task.isCancelled,
+                  !didRequestDisconnect,
+                  !isConnected {
+                attempt += 1
+                reconnectState = .reconnecting(attempt: attempt)
+
+                let backoff = reconnectBackoffNanoseconds(
+                    attempt: attempt
+                )
+                await sleepForReconnectBackoff(backoff)
+
+                guard !Task.isCancelled,
+                      !didRequestDisconnect,
+                      isAppInForeground,
+                      !isConnected else {
+                    continue
+                }
+
+                await connect(resetTimeline: false, isRecoveryAttempt: true)
+            }
+
+            if !didRequestDisconnect, isConnected {
+                reconnectState = .idle
+            }
+        }
+    }
+
+    func cancelReconnectLoop() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectState = .idle
+    }
+
+    func reconnectBackoffNanoseconds(attempt: Int) -> UInt64 {
+        let index = max(0, min(attempt - 1, ReconnectDefaults.backoffNanoseconds.count - 1))
+        return ReconnectDefaults.backoffNanoseconds[index]
+    }
+
+    func sleepForReconnectBackoff(_ durationNanoseconds: UInt64) async {
+        var remaining = durationNanoseconds
+
+        while remaining > 0 {
+            if Task.isCancelled || didRequestDisconnect {
+                return
+            }
+
+            if !isAppInForeground {
+                try? await Task.sleep(nanoseconds: ReconnectDefaults.sleepChunkNanoseconds)
+                continue
+            }
+
+            let chunk = min(remaining, ReconnectDefaults.sleepChunkNanoseconds)
+            try? await Task.sleep(nanoseconds: chunk)
+            remaining -= chunk
+        }
+    }
+
     func validateHTTP(_ response: URLResponse) throws {
         try validateHTTP(response, data: nil)
+    }
+
+    func catchUpStartSequence(for threadID: String) -> UInt64 {
+        let normalizedThreadID = normalizedThreadKey(threadID)
+        return conversationState.recoveryByThreadID[normalizedThreadID]?.latestThreadSequence ?? 0
+    }
+
+    func shouldRequestCatchUpAfterThreadList(for threadID: String) -> Bool {
+        guard !isStartingFreshConversation else {
+            return false
+        }
+
+        if isRestoringSelectedThread {
+            return true
+        }
+
+        let normalizedThreadID = normalizedThreadKey(threadID)
+        let hasMessages = !(conversationState.messagesByThreadID[normalizedThreadID]?.isEmpty ?? true)
+        let hasRecoverySnapshot = conversationState.recoveryByThreadID[normalizedThreadID] != nil
+        return !hasMessages || !hasRecoverySnapshot
     }
 
     func validateHTTP(_ response: URLResponse, data: Data?) throws {
@@ -551,8 +828,20 @@ private extension CodexV2PreviewClient {
     }
 
     var normalizedMacDeviceIDOverride: String? {
-        let trimmed = macDeviceIDOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalizedIdentifier(macDeviceIDOverride)
+    }
+
+    func normalizedIdentifier(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func normalizedThreadKey(_ threadID: String) -> String {
+        CodexV2ConversationReducer.normalizedThreadKey(threadID)
     }
 
     func persist(_ value: String, forKey key: String) {
