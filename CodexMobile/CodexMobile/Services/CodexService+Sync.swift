@@ -95,6 +95,14 @@ extension CodexService {
         }
 
         isAppInForeground = isForeground
+        debugRuntimeLog(
+            "[Recovery] foregroundStateChanged "
+            + "isForeground=\(isForeground) "
+            + "connected=\(isConnected) initialized=\(isInitialized) "
+            + "autoReconnect=\(shouldAutoReconnectOnForeground) "
+            + "hasRunningTurn=\(hasAnyRunningTurn) "
+            + "bgGraceEligible=\(canAttemptBackgroundGraceReconnect)"
+        )
         if isForeground {
             if isConnected && isInitialized {
                 startSyncLoop()

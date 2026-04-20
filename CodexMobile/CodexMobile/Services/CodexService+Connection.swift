@@ -402,6 +402,16 @@ extension CodexService {
         cancelCurrentSocketConnection()
 
         let disposition = receiveErrorDisposition(for: error, relayCloseCode: relayCloseCode)
+        let closeCodeDescription = relayCloseCodeRawValue(relayCloseCode).map(String.init) ?? "none"
+        debugRuntimeLog(
+            "[Recovery] receiveError "
+            + "closeCode=\(closeCodeDescription) "
+            + "error=\(error.localizedDescription) "
+            + "clearSavedSession=\(disposition.shouldClearSavedRelaySession) "
+            + "autoReconnect=\(disposition.shouldAutoReconnectOnForeground) "
+            + "recoveryState=\(String(describing: disposition.connectionRecoveryState)) "
+            + "appForeground=\(isAppInForeground)"
+        )
         isConnected = false
         isInitialized = false
         shouldAutoReconnectOnForeground = disposition.shouldAutoReconnectOnForeground

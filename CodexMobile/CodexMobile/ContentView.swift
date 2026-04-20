@@ -145,9 +145,22 @@ struct ContentView: View {
             .onChange(of: scenePhase) { _, phase in
                 debugSidebarLog("scenePhase changed phase=\(String(describing: phase))")
                 codex.setForegroundState(phase != .background)
+                codex.debugRuntimeLog(
+                    "[Recovery] scenePhase=\(String(describing: phase)) "
+                    + "connected=\(codex.isConnected) connecting=\(codex.isConnecting) "
+                    + "autoReconnect=\(codex.shouldAutoReconnectOnForeground) "
+                    + "savedSession=\(codex.hasSavedRelaySession) "
+                    + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate) "
+                    + "bgGraceEligible=\(codex.canAttemptBackgroundGraceReconnect)"
+                )
                 if phase == .active {
                     Task {
                         guard hasSeenOnboarding, !isShowingManualScanner else {
+                            codex.debugRuntimeLog(
+                                "[Recovery] scenePhase active skipped "
+                                + "onboardingSeen=\(hasSeenOnboarding) "
+                                + "manualScanner=\(isShowingManualScanner)"
+                            )
                             return
                         }
 
@@ -159,7 +172,14 @@ struct ContentView: View {
                     teardownSidebarPrewarm()
                 }
             }
-            .onChange(of: codex.shouldAutoReconnectOnForeground) { _, shouldReconnect in
+            .onChange(of: codex.shouldAutoReconnectOnForeground) { wasReconnectArmed, shouldReconnect in
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectFlagChanged from=\(wasReconnectArmed) to=\(shouldReconnect) "
+                    + "scenePhase=\(String(describing: scenePhase)) "
+                    + "connected=\(codex.isConnected) connecting=\(codex.isConnecting) "
+                    + "savedSession=\(codex.hasSavedRelaySession) "
+                    + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate)"
+                )
                 guard shouldReconnect else {
                     return
                 }
@@ -517,7 +537,10 @@ struct ContentView: View {
         }
 
         hasAttemptedAutomaticWakeSavedMacDisplay = true
-        await performSavedMacDisplayWakeAttempt()
+        await performSavedMacDisplayWakeAttempt(
+            stopReconnectFirst: false,
+            surfaceFailureInUI: false
+        )
     }
 
     // Keeps foreground reconnect and the one-shot wake fallback in the same guarded path.
@@ -527,12 +550,33 @@ struct ContentView: View {
               hasSeenOnboarding,
               !isShowingManualScanner,
               !isShowingManualPairingEntry else {
+            codex.debugRuntimeLog(
+                "[Recovery] foregroundRecoverySkipped "
+                + "scenePhase=\(String(describing: scenePhase)) "
+                + "allowBgGrace=\(allowsBackgroundGraceRecovery) "
+                + "onboardingSeen=\(hasSeenOnboarding) "
+                + "manualScanner=\(isShowingManualScanner) "
+                + "manualPairEntry=\(isShowingManualPairingEntry) "
+                + "autoReconnect=\(codex.shouldAutoReconnectOnForeground) "
+                + "connected=\(codex.isConnected) connecting=\(codex.isConnecting)"
+            )
             return
         }
+
+        codex.debugRuntimeLog(
+            "[Recovery] foregroundRecoveryStart "
+            + "scenePhase=\(String(describing: scenePhase)) "
+            + "allowBgGrace=\(allowsBackgroundGraceRecovery) "
+            + "autoReconnect=\(codex.shouldAutoReconnectOnForeground) "
+            + "connected=\(codex.isConnected) connecting=\(codex.isConnecting) "
+            + "savedSession=\(codex.hasSavedRelaySession) "
+            + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate)"
+        )
 
         if scenePhase == .active {
             await attemptAutomaticWakeSavedMacDisplayIfNeeded()
         }
+        codex.debugRuntimeLog("[Recovery] foregroundRecoveryHandOffToAutoReconnect")
         await viewModel.attemptAutoReconnectOnForegroundIfNeeded(
             codex: codex,
             allowBackgroundGrace: allowsBackgroundGraceRecovery
@@ -552,23 +596,36 @@ struct ContentView: View {
     }
 
     // Sends one wake pulse over the best remembered pairing path without hiding the manual wake affordance.
-    private func performSavedMacDisplayWakeAttempt() async {
+    private func performSavedMacDisplayWakeAttempt(
+        stopReconnectFirst: Bool = true,
+        surfaceFailureInUI: Bool = true
+    ) async {
         guard !isWakingSavedMacDisplay else { return }
         isWakingSavedMacDisplay = true
-        codex.lastErrorMessage = wakingSavedMacDisplayStatusMessage
+        if surfaceFailureInUI {
+            codex.lastErrorMessage = wakingSavedMacDisplayStatusMessage
+        }
 
         defer { isWakingSavedMacDisplay = false }
 
         do {
-            await viewModel.stopAutoReconnectForManualRetry(codex: codex)
+            if stopReconnectFirst {
+                await viewModel.stopAutoReconnectForManualRetry(codex: codex)
+            }
             let handoffService = DesktopHandoffService(codex: codex)
             try await handoffService.wakeDisplay()
-            if codex.lastErrorMessage == wakingSavedMacDisplayStatusMessage {
+            if surfaceFailureInUI,
+               codex.lastErrorMessage == wakingSavedMacDisplayStatusMessage {
                 codex.lastErrorMessage = nil
             }
         } catch {
             if let handoffError = error as? DesktopHandoffError,
                handoffError.shouldSuppressConnectionRecoveryMessage {
+                if surfaceFailureInUI,
+                   codex.lastErrorMessage == wakingSavedMacDisplayStatusMessage {
+                    codex.lastErrorMessage = nil
+                }
+            } else if !surfaceFailureInUI {
                 if codex.lastErrorMessage == wakingSavedMacDisplayStatusMessage {
                     codex.lastErrorMessage = nil
                 }

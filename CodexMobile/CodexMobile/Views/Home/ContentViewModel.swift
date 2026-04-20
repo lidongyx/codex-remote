@@ -176,6 +176,15 @@ final class ContentViewModel {
         guard codex.shouldAutoReconnectOnForeground,
               !isRunningAutoReconnect,
               codex.isAppInForeground || isBackgroundGraceAttempt else {
+            codex.debugRuntimeLog(
+                "[Recovery] autoReconnectSkipped "
+                + "autoReconnect=\(codex.shouldAutoReconnectOnForeground) "
+                + "alreadyRunning=\(isRunningAutoReconnect) "
+                + "appForeground=\(codex.isAppInForeground) "
+                + "allowBgGrace=\(allowBackgroundGrace) "
+                + "bgGraceAttempt=\(isBackgroundGraceAttempt) "
+                + "connected=\(codex.isConnected) connecting=\(codex.isConnecting)"
+            )
             return
         }
 
@@ -185,17 +194,31 @@ final class ContentViewModel {
         var attempt = 0
 
         let maxAttempts = isBackgroundGraceAttempt ? 1 : (reconnectAttemptLimitOverride ?? 50)
+        codex.debugRuntimeLog(
+            "[Recovery] autoReconnectStart "
+            + "bgGraceAttempt=\(isBackgroundGraceAttempt) "
+            + "maxAttempts=\(maxAttempts) "
+            + "savedSession=\(codex.hasSavedRelaySession) "
+            + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate)"
+        )
 
         // Keep retryable reconnects alive until the socket recovers or the pairing becomes invalid.
         while codex.shouldAutoReconnectOnForeground, attempt < maxAttempts {
 
             guard let fullURL = await preferredReconnectURL(codex: codex) else {
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectStopped reason=noReconnectURL "
+                    + "savedSession=\(codex.hasSavedRelaySession) "
+                    + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate) "
+                    + "secureState=\(String(describing: codex.secureConnectionState))"
+                )
                 codex.shouldAutoReconnectOnForeground = false
                 codex.connectionRecoveryState = .idle
                 return
             }
 
             if codex.isConnected {
+                codex.debugRuntimeLog("[Recovery] autoReconnectShortCircuited reason=alreadyConnected")
                 codex.shouldAutoReconnectOnForeground = false
                 codex.connectionRecoveryState = .idle
                 codex.lastErrorMessage = nil
@@ -204,9 +227,11 @@ final class ContentViewModel {
 
             if codex.isConnecting {
                 if !codex.shouldAutoReconnectOnForeground {
+                    codex.debugRuntimeLog("[Recovery] autoReconnectStopped reason=connectCancelledWhileWaiting")
                     codex.connectionRecoveryState = .idle
                     return
                 }
+                codex.debugRuntimeLog("[Recovery] autoReconnectWaitingForInFlightConnect")
                 await sleepForReconnectBackoff(
                     300_000_000,
                     continueWhile: { codex.shouldAutoReconnectOnForeground }
@@ -214,17 +239,29 @@ final class ContentViewModel {
                 continue
             }
             do {
+                let host = URL(string: fullURL)?.host ?? "unknown-host"
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectAttempt attempt=\(max(1, attempt + 1)) "
+                    + "host=\(host) bgGraceAttempt=\(isBackgroundGraceAttempt)"
+                )
                 codex.connectionRecoveryState = .retrying(
                     attempt: max(1, attempt + 1),
                     message: "Reconnecting..."
                 )
                 try await connect(codex: codex, serverURL: fullURL)
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectSucceeded attempt=\(max(1, attempt + 1)) host=\(host)"
+                )
                 codex.connectionRecoveryState = .idle
                 codex.lastErrorMessage = nil
                 codex.shouldAutoReconnectOnForeground = false
                 return
             } catch {
                 if codex.secureConnectionState == .rePairRequired {
+                    codex.debugRuntimeLog(
+                        "[Recovery] autoReconnectStopped reason=rePairRequired "
+                        + "attempt=\(max(1, attempt + 1)) error=\(error.localizedDescription)"
+                    )
                     codex.connectionRecoveryState = .idle
                     codex.shouldAutoReconnectOnForeground = false
                     if codex.lastErrorMessage?.isEmpty ?? true {
@@ -234,11 +271,19 @@ final class ContentViewModel {
                 }
 
                 if isCancellationLikeError(error) {
+                    codex.debugRuntimeLog(
+                        "[Recovery] autoReconnectStopped reason=cancelled "
+                        + "attempt=\(max(1, attempt + 1))"
+                    )
                     codex.connectionRecoveryState = .idle
                     return
                 }
 
                 if !codex.shouldAutoReconnectOnForeground {
+                    codex.debugRuntimeLog(
+                        "[Recovery] autoReconnectStopped reason=flagLowered "
+                        + "attempt=\(max(1, attempt + 1))"
+                    )
                     codex.connectionRecoveryState = .idle
                     return
                 }
@@ -246,6 +291,13 @@ final class ContentViewModel {
                 let isRetryable = codex.isRecoverableTransientConnectionError(error)
                     || codex.isBenignBackgroundDisconnect(error)
                     || codex.isRetryableSavedSessionConnectError(error)
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectFailed "
+                    + "attempt=\(max(1, attempt + 1)) "
+                    + "retryable=\(isRetryable) "
+                    + "secureState=\(String(describing: codex.secureConnectionState)) "
+                    + "error=\(error.localizedDescription)"
+                )
 
                 guard isRetryable else {
                     codex.connectionRecoveryState = .idle
@@ -261,12 +313,16 @@ final class ContentViewModel {
                 )
 
                 if isBackgroundGraceAttempt {
+                    codex.debugRuntimeLog("[Recovery] autoReconnectStopped reason=backgroundGraceSingleAttemptComplete")
                     return
                 }
 
                 let backoffIndex = min(attempt, autoReconnectBackoffNanoseconds.count - 1)
                 let backoff = autoReconnectBackoffNanoseconds[backoffIndex]
                 attempt += 1
+                codex.debugRuntimeLog(
+                    "[Recovery] autoReconnectBackingOff attempt=\(attempt) backoffNs=\(backoff)"
+                )
                 await sleepForReconnectBackoff(
                     backoff,
                     continueWhile: { codex.shouldAutoReconnectOnForeground }
@@ -276,6 +332,9 @@ final class ContentViewModel {
 
         // Exhausted all attempts — stop retrying but keep the saved pairing for next foreground cycle.
         if attempt >= maxAttempts {
+            codex.debugRuntimeLog(
+                "[Recovery] autoReconnectExhausted attempts=\(attempt) maxAttempts=\(maxAttempts)"
+            )
             codex.shouldAutoReconnectOnForeground = false
             codex.connectionRecoveryState = .idle
             codex.lastErrorMessage = "Could not reconnect. Tap Reconnect to try again."
@@ -403,10 +462,18 @@ extension ContentViewModel {
     func preferredReconnectURL(codex: CodexService) async -> String? {
         switch await trustedReconnectResolution(codex: codex) {
         case .use(let resolvedURL):
+            let host = URL(string: resolvedURL)?.host ?? "unknown-host"
+            codex.debugRuntimeLog("[Recovery] reconnectURL source=trusted host=\(host)")
             return resolvedURL
         case .fallbackToSaved:
-            return savedReconnectURL(codex: codex)
+            let savedURL = savedReconnectURL(codex: codex)
+            let host = savedURL.flatMap { URL(string: $0)?.host } ?? "none"
+            codex.debugRuntimeLog(
+                "[Recovery] reconnectURL source=saved available=\(savedURL != nil) host=\(host)"
+            )
+            return savedURL
         case .stop:
+            codex.debugRuntimeLog("[Recovery] reconnectURL source=stop")
             return nil
         }
     }
@@ -414,22 +481,31 @@ extension ContentViewModel {
     // Resolves a trusted-Mac session when possible and tells the caller whether to use, fall back, or stop.
     private func trustedReconnectResolution(codex: CodexService) async -> ReconnectURLResolution {
         guard codex.hasTrustedMacReconnectCandidate else {
+            codex.debugRuntimeLog("[Recovery] trustedReconnectResolution noTrustedCandidate")
             return .fallbackToSaved
         }
 
         do {
             guard let trustedReconnectURL = try await resolvedTrustedReconnectURL(codex: codex) else {
+                codex.debugRuntimeLog("[Recovery] trustedReconnectResolution emptyResolvedURL")
                 return .fallbackToSaved
             }
             return .use(trustedReconnectURL)
         } catch let error as CodexTrustedSessionResolveError {
+            codex.debugRuntimeLog(
+                "[Recovery] trustedReconnectResolution policyError=\(String(describing: error))"
+            )
             return trustedReconnectResolution(for: error, codex: codex)
         } catch is CancellationError {
+            codex.debugRuntimeLog("[Recovery] trustedReconnectResolution cancelled")
             return .stop
         } catch {
             if !codex.hasSavedRelaySession {
                 codex.lastErrorMessage = error.localizedDescription
             }
+            codex.debugRuntimeLog(
+                "[Recovery] trustedReconnectResolution fallbackAfterError=\(error.localizedDescription)"
+            )
             return .fallbackToSaved
         }
     }

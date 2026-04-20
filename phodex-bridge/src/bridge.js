@@ -53,7 +53,7 @@ const RELAY_WATCHDOG_PING_INTERVAL_MS = readPositiveIntegerEnv(
 );
 const RELAY_WATCHDOG_STALE_AFTER_MS = readPositiveIntegerEnv(
   "REMODEX_RELAY_WATCHDOG_STALE_AFTER_MS",
-  120_000
+  25_000
 );
 const BRIDGE_STATUS_HEARTBEAT_INTERVAL_MS = 5_000;
 const STALE_RELAY_STATUS_MESSAGE = "Relay heartbeat stalled; reconnect pending.";

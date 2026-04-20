@@ -171,11 +171,11 @@ final class DesktopHandoffService {
                 return resolved.resolvedWebSocketURL(fallbackRelayURL: codex.normalizedRelayURL)
             } catch let error as CodexTrustedSessionResolveError {
                 switch error {
-                case .unsupportedRelay, .network, .noTrustedMac:
+                case .unsupportedRelay, .network, .noTrustedMac, .invalidResponse:
                     if let savedReconnectURL {
                         return savedReconnectURL
                     }
-                case .macOffline, .rePairRequired, .invalidResponse:
+                case .macOffline, .rePairRequired:
                     break
                 }
 
