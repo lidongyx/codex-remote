@@ -174,6 +174,46 @@ final class ContentViewModelReconnectTests: XCTestCase {
         XCTAssertFalse(viewModel.isAttemptingManualReconnect)
     }
 
+    func testConnectWithAutoRecoveryKeepsRetryingUntilCallerCancels() async {
+        let service = makeService()
+        let viewModel = ContentViewModel()
+        var connectAttempts = 0
+        var shouldContinue = true
+
+        viewModel.reconnectSleepOverride = { _ in await Task.yield() }
+        viewModel.connectOverride = { _, _ in
+            connectAttempts += 1
+            throw NWError.posix(.ECONNABORTED)
+        }
+
+        let reconnectTask = Task {
+            do {
+                try await viewModel.connectWithAutoRecovery(
+                    codex: service,
+                    performAutoRetry: true,
+                    continueWhile: { shouldContinue },
+                    serverURLProvider: { "wss://relay.local/relay/saved-session" }
+                )
+                XCTFail("Expected caller cancellation to stop the persistent reconnect loop.")
+            } catch is CancellationError {
+                // Expected.
+            } catch {
+                XCTFail("Expected CancellationError, got \(error)")
+            }
+        }
+
+        while connectAttempts < 4 {
+            await Task.yield()
+        }
+
+        shouldContinue = false
+        await reconnectTask.value
+
+        XCTAssertGreaterThanOrEqual(connectAttempts, 4)
+        XCTAssertFalse(viewModel.isAttemptingAutoReconnect)
+        XCTAssertEqual(service.connectionRecoveryState, .idle)
+    }
+
     func testManualReconnectCancelsStuckTrustedSessionResolve() async {
         let service = makeService()
         let viewModel = ContentViewModel()

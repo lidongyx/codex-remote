@@ -16,8 +16,9 @@ final class ContentViewModel {
     private let reconnectSleepChunkNanoseconds: UInt64 = 100_000_000
     private(set) var isRunningAutoReconnect = false
     private(set) var isRunningManualReconnect = false
+    private var shouldCancelConnectRecovery = false
     private var shouldCancelManualReconnect = false
-    // Test hooks keep reconnect verification fast without changing production retry behavior.
+    // Test hooks keep reconnect verification fast. `nil` means foreground reconnects stay unbounded in production.
     @ObservationIgnored var reconnectAttemptLimitOverride: Int?
     @ObservationIgnored var connectOverride: ((CodexService, String) async throws -> Void)?
     @ObservationIgnored var reconnectSleepOverride: ((UInt64) async -> Void)?
@@ -49,6 +50,7 @@ final class ContentViewModel {
     // Connects to the relay WebSocket using a scanned QR code payload.
     func connectToRelay(pairingPayload: CodexPairingQRPayload, codex: CodexService) async {
         await stopAutoReconnectForManualScan(codex: codex)
+        shouldCancelConnectRecovery = false
         // Avoid logging live pairing metadata; the relay URL path includes a bearer-like session id.
         let fullURL = "\(pairingPayload.relay)/\(pairingPayload.sessionId)"
         codex.rememberRelayPairing(pairingPayload)
@@ -60,6 +62,9 @@ final class ContentViewModel {
                 serverURLProvider: { fullURL }
             )
         } catch {
+            if isCancellationLikeError(error) {
+                return
+            }
             if codex.lastErrorMessage?.isEmpty ?? true {
                 codex.lastErrorMessage = codex.userFacingConnectFailureMessage(error)
             }
@@ -79,6 +84,7 @@ final class ContentViewModel {
         }
 
         // Flips the UI into an immediate busy state before the reconnect handoff reaches the socket layer.
+        shouldCancelConnectRecovery = false
         shouldCancelManualReconnect = false
         isRunningManualReconnect = true
         defer { isRunningManualReconnect = false }
@@ -112,6 +118,7 @@ final class ContentViewModel {
             return
         }
 
+        shouldCancelConnectRecovery = true
         codex.shouldAutoReconnectOnForeground = false
         codex.connectionRecoveryState = .retrying(attempt: 0, message: "Preparing reconnect...")
         codex.lastErrorMessage = nil
@@ -128,6 +135,7 @@ final class ContentViewModel {
 
     // Lets the manual QR flow take over instead of competing with the foreground reconnect loop.
     func stopAutoReconnectForManualScan(codex: CodexService) async {
+        shouldCancelConnectRecovery = true
         shouldCancelManualReconnect = true
         codex.shouldAutoReconnectOnForeground = false
         codex.connectionRecoveryState = .idle
@@ -156,6 +164,7 @@ final class ContentViewModel {
             return
         }
 
+        shouldCancelConnectRecovery = false
         do {
             try await connectWithAutoRecovery(
                 codex: codex,
@@ -193,17 +202,18 @@ final class ContentViewModel {
 
         var attempt = 0
 
-        let maxAttempts = isBackgroundGraceAttempt ? 1 : (reconnectAttemptLimitOverride ?? 50)
+        let maxAttempts = isBackgroundGraceAttempt ? 1 : reconnectAttemptLimitOverride
         codex.debugRuntimeLog(
             "[Recovery] autoReconnectStart "
             + "bgGraceAttempt=\(isBackgroundGraceAttempt) "
-            + "maxAttempts=\(maxAttempts) "
+            + "maxAttempts=\(reconnectAttemptLimitDescription(maxAttempts)) "
             + "savedSession=\(codex.hasSavedRelaySession) "
             + "trustedCandidate=\(codex.hasTrustedMacReconnectCandidate)"
         )
 
         // Keep retryable reconnects alive until the socket recovers or the pairing becomes invalid.
-        while codex.shouldAutoReconnectOnForeground, attempt < maxAttempts {
+        while codex.shouldAutoReconnectOnForeground,
+              hasRemainingReconnectAttempts(afterCompletedAttempts: attempt, maxAttempts: maxAttempts) {
 
             guard let fullURL = await preferredReconnectURL(codex: codex) else {
                 codex.debugRuntimeLog(
@@ -320,6 +330,13 @@ final class ContentViewModel {
                 let backoffIndex = min(attempt, autoReconnectBackoffNanoseconds.count - 1)
                 let backoff = autoReconnectBackoffNanoseconds[backoffIndex]
                 attempt += 1
+                guard hasRemainingReconnectAttempts(afterCompletedAttempts: attempt, maxAttempts: maxAttempts) else {
+                    codex.debugRuntimeLog(
+                        "[Recovery] autoReconnectPaused "
+                        + "attempts=\(attempt) maxAttempts=\(reconnectAttemptLimitDescription(maxAttempts))"
+                    )
+                    return
+                }
                 codex.debugRuntimeLog(
                     "[Recovery] autoReconnectBackingOff attempt=\(attempt) backoffNs=\(backoff)"
                 )
@@ -330,14 +347,8 @@ final class ContentViewModel {
             }
         }
 
-        // Exhausted all attempts — stop retrying but keep the saved pairing for next foreground cycle.
-        if attempt >= maxAttempts {
-            codex.debugRuntimeLog(
-                "[Recovery] autoReconnectExhausted attempts=\(attempt) maxAttempts=\(maxAttempts)"
-            )
-            codex.shouldAutoReconnectOnForeground = false
+        if !codex.shouldAutoReconnectOnForeground {
             codex.connectionRecoveryState = .idle
-            codex.lastErrorMessage = "Could not reconnect. Tap Reconnect to try again."
         }
     }
 }
@@ -377,11 +388,13 @@ extension ContentViewModel {
         isRunningAutoReconnect = true
         defer { isRunningAutoReconnect = false }
 
-        let maxAttemptIndex = performAutoRetry ? autoReconnectBackoffNanoseconds.count : 0
+        let shouldContinueRecovery = shouldContinue ?? { !self.shouldCancelConnectRecovery }
+        let maxAttempts = performAutoRetry ? reconnectAttemptLimitOverride : 1
         var lastError: Error?
 
-        for attemptIndex in 0...maxAttemptIndex {
-            guard shouldContinue?() ?? true else {
+        var attemptIndex = 0
+        while hasRemainingReconnectAttempts(afterCompletedAttempts: attemptIndex, maxAttempts: maxAttempts) {
+            guard shouldContinueRecovery() else {
                 codex.connectionRecoveryState = .idle
                 throw CancellationError()
             }
@@ -391,7 +404,7 @@ extension ContentViewModel {
                 return
             }
 
-            guard shouldContinue?() ?? true else {
+            guard shouldContinueRecovery() else {
                 codex.connectionRecoveryState = .idle
                 throw CancellationError()
             }
@@ -429,9 +442,7 @@ extension ContentViewModel {
                     || codex.isBenignBackgroundDisconnect(error)
                     || codex.isRetryableSavedSessionConnectError(error)
 
-                guard performAutoRetry,
-                      isRetryable,
-                      attemptIndex < autoReconnectBackoffNanoseconds.count else {
+                guard performAutoRetry, isRetryable else {
                     codex.connectionRecoveryState = .idle
                     codex.shouldAutoReconnectOnForeground = false
                     codex.lastErrorMessage = codex.userFacingConnectFailureMessage(error)
@@ -443,9 +454,14 @@ extension ContentViewModel {
                     attempt: attemptIndex + 1,
                     message: codex.recoveryStatusMessage(for: error)
                 )
+                let backoffIndex = min(attemptIndex, autoReconnectBackoffNanoseconds.count - 1)
+                attemptIndex += 1
+                guard hasRemainingReconnectAttempts(afterCompletedAttempts: attemptIndex, maxAttempts: maxAttempts) else {
+                    break
+                }
                 await sleepForReconnectBackoff(
-                    autoReconnectBackoffNanoseconds[attemptIndex],
-                    continueWhile: shouldContinue
+                    autoReconnectBackoffNanoseconds[backoffIndex],
+                    continueWhile: shouldContinueRecovery
                 )
             }
         }
@@ -597,5 +613,20 @@ extension ContentViewModel {
 
     private var shouldContinueManualReconnect: Bool {
         !shouldCancelManualReconnect
+    }
+
+    private func hasRemainingReconnectAttempts(
+        afterCompletedAttempts completedAttempts: Int,
+        maxAttempts: Int?
+    ) -> Bool {
+        guard let maxAttempts else {
+            return true
+        }
+
+        return completedAttempts < maxAttempts
+    }
+
+    private func reconnectAttemptLimitDescription(_ maxAttempts: Int?) -> String {
+        maxAttempts.map(String.init) ?? "unbounded"
     }
 }
