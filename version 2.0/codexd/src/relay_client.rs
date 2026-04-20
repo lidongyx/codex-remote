@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use codex_proto::session::SessionReady;
-use codex_proto::thread::ThreadListSnapshot;
 use codex_proto::run::RunStartRequest;
+use codex_proto::session::SessionReady;
+use codex_proto::thread::{ThreadCatchUpBatch, ThreadCatchUpRequest, ThreadListSnapshot};
 use codex_proto::transport::client_frame::Payload as ClientPayload;
 use codex_proto::transport::server_frame::Payload as ServerPayload;
 use codex_proto::transport::{ClientFrame, ServerFrame};
@@ -84,7 +84,8 @@ impl RelayClient {
         info!("connecting codexd relay websocket to {}", ws_url);
         let (websocket, _) = connect_async(&ws_url).await?;
         let (mut write, mut read) = websocket.split();
-        let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
+        let (outbound_tx, mut outbound_rx) =
+            mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
         let ping_outbound_tx = outbound_tx.clone();
         self.session_registry.set_active_sessions(1);
         self.session_registry.set_relay_connected(true);
@@ -113,10 +114,7 @@ impl RelayClient {
             }],
             ttl_seconds: 90,
         };
-        let refresh_url = format!(
-            "{}/v2/presence/register",
-            relay_http_url.trim_end_matches('/')
-        );
+        let refresh_url = format!("{}/v2/presence/register", relay_http_url.trim_end_matches('/'));
 
         let refresh_task = tokio::spawn(async move {
             let mut ticker = interval(Duration::from_secs(30));
@@ -184,10 +182,7 @@ impl RelayClient {
     }
 
     async fn register_presence(&self, relay_http_url: &str, session_id: &str) -> Result<()> {
-        let url = format!(
-            "{}/v2/presence/register",
-            relay_http_url.trim_end_matches('/')
-        );
+        let url = format!("{}/v2/presence/register", relay_http_url.trim_end_matches('/'));
         let body = PresenceRegisterRequest {
             mac_device_id: self.trust_store.mac_device_id.clone(),
             relay_session_id: session_id.to_string(),
@@ -212,7 +207,6 @@ impl RelayClient {
         Ok(())
     }
 
-    // Temporary mixed-mode surface while the binary protocol is being wired end to end.
     async fn handle_incoming_message(
         &self,
         session_id: &str,
@@ -228,9 +222,8 @@ impl RelayClient {
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 let trimmed = text.trim();
                 if trimmed.eq_ignore_ascii_case("ping") {
-                    outbound_tx
-                        .send(tokio_tungstenite::tungstenite::Message::Text("pong".into()))
-                        .ok();
+                    let _ = outbound_tx
+                        .send(tokio_tungstenite::tungstenite::Message::Text("pong".into()));
                     return Ok(());
                 }
 
@@ -243,11 +236,9 @@ impl RelayClient {
                         "daemonVersion": self.config.daemon_version,
                         "relayConnected": self.session_registry.relay_connected(),
                     });
-                    outbound_tx
-                        .send(tokio_tungstenite::tungstenite::Message::Text(
-                            response.to_string().into(),
-                        ))
-                        .ok();
+                    let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Text(
+                        response.to_string().into(),
+                    ));
                     return Ok(());
                 }
 
@@ -275,26 +266,36 @@ impl RelayClient {
                 };
                 let mut encoded = Vec::new();
                 response.encode(&mut encoded)?;
-                outbound_tx
-                    .send(tokio_tungstenite::tungstenite::Message::Binary(encoded))
-                    .ok();
+                let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
                 Ok(())
             }
             ClientPayload::ThreadListRequest(_request) => {
                 let (global_sequence, threads) = self.runtime_supervisor.thread_summaries().await;
                 let response = ServerFrame {
-                    payload: Some(ServerPayload::ThreadListSnapshot(
-                        ThreadListSnapshot {
-                            global_sequence,
-                            threads,
-                        },
-                    )),
+                    payload: Some(ServerPayload::ThreadListSnapshot(ThreadListSnapshot {
+                        global_sequence,
+                        threads,
+                    })),
                 };
                 let mut encoded = Vec::new();
                 response.encode(&mut encoded)?;
-                outbound_tx
-                    .send(tokio_tungstenite::tungstenite::Message::Binary(encoded))
-                    .ok();
+                let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
+                Ok(())
+            }
+            ClientPayload::ThreadCatchupRequest(ThreadCatchUpRequest {
+                thread_id,
+                since_thread_sequence,
+            }) => {
+                let batch: ThreadCatchUpBatch = self
+                    .runtime_supervisor
+                    .thread_catch_up(&thread_id, since_thread_sequence)
+                    .await;
+                let response = ServerFrame {
+                    payload: Some(ServerPayload::ThreadCatchupBatch(batch)),
+                };
+                let mut encoded = Vec::new();
+                response.encode(&mut encoded)?;
+                let _ = outbound_tx.send(tokio_tungstenite::tungstenite::Message::Binary(encoded));
                 Ok(())
             }
             ClientPayload::RunStartRequest(RunStartRequest { thread_id, text, .. }) => {
@@ -303,12 +304,10 @@ impl RelayClient {
                     .await;
                 let (global_sequence, threads) = self.runtime_supervisor.thread_summaries().await;
                 let response = ServerFrame {
-                    payload: Some(ServerPayload::ThreadListSnapshot(
-                        ThreadListSnapshot {
-                            global_sequence,
-                            threads,
-                        },
-                    )),
+                    payload: Some(ServerPayload::ThreadListSnapshot(ThreadListSnapshot {
+                        global_sequence,
+                        threads,
+                    })),
                 };
                 let mut encoded = Vec::new();
                 response.encode(&mut encoded)?;

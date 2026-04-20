@@ -55,7 +55,7 @@ Already implemented:
   - reasoning delta
   - assistant delta
   - run completion
-- Swift V2 client prototype in `mobile-ios/`
+  - thread catch-up batch
 
 Not implemented yet:
 

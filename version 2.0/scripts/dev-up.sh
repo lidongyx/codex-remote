@@ -9,11 +9,22 @@ DAEMON_HEALTH_BIND_ADDR="${DAEMON_HEALTH_BIND_ADDR:-127.0.0.1:9911}"
 RELAY_HTTP_URL="${RELAY_HTTP_URL:-http://127.0.0.1:9910}"
 RELAY_WS_BASE_URL="${RELAY_WS_BASE_URL:-ws://127.0.0.1:9910}"
 
+require_port_free() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "[v2] port ${port} is already in use; stop the existing process first" >&2
+    exit 1
+  fi
+}
+
 cleanup() {
   jobs -p | xargs -r kill 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM
+
+require_port_free "${RELAY_BIND_ADDR##*:}"
+require_port_free "${DAEMON_HEALTH_BIND_ADDR##*:}"
 
 echo "[v2] starting codex-relay-rs on ${RELAY_BIND_ADDR}"
 (
