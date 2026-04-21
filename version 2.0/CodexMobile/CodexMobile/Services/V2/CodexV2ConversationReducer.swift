@@ -44,6 +44,13 @@ enum CodexV2ConversationReducer {
         return pendingPrompt
     }
 
+    static func clearPendingPrompt(
+        id pendingPromptID: String,
+        in state: inout CodexV2ConversationState
+    ) {
+        state.pendingPrompts.removeAll { $0.id == pendingPromptID }
+    }
+
     static func apply(
         _ frame: CodexV2ServerFrame,
         to state: inout CodexV2ConversationState

@@ -33,7 +33,7 @@ final class CodexV2PreviewClient {
         static let relayHTTPBaseURLString = "http://127.0.0.1:9910"
         static let relayWSBaseURLString = "ws://127.0.0.1:9910"
         static let daemonHealthURLString = "http://127.0.0.1:9911/health"
-        static let prompt = "Reply with a short V2 preview confirmation."
+        static let prompt = ""
     }
 
     private enum ReconnectDefaults {
@@ -370,7 +370,7 @@ final class CodexV2PreviewClient {
             ? ""
             : (selectedThreadID ?? timeline.latestThreadID ?? activeThreadID ?? "")
         let provisionalThreadID = normalizedIdentifier(targetThreadID)
-        _ = CodexV2ConversationReducer.recordOutgoingPrompt(
+        let pendingPrompt = CodexV2ConversationReducer.recordOutgoingPrompt(
             trimmedPrompt,
             provisionalThreadID: provisionalThreadID,
             in: &conversationState
@@ -382,7 +382,12 @@ final class CodexV2PreviewClient {
                 prompt: trimmedPrompt,
                 threadID: targetThreadID
             )
+            prompt = ""
         } catch {
+            CodexV2ConversationReducer.clearPendingPrompt(
+                id: pendingPrompt.id,
+                in: &conversationState
+            )
             handleTransportFailure(error)
         }
     }

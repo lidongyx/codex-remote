@@ -45,6 +45,40 @@ final class CodexV2ConversationReducerTests: XCTestCase {
         )
     }
 
+    func testClearPendingPromptLeavesMessageButPreventsFutureResolution() {
+        var state = CodexV2ConversationState()
+
+        let pendingPrompt = CodexV2ConversationReducer.recordOutgoingPrompt(
+            "This send failed once.",
+            provisionalThreadID: nil,
+            in: &state
+        )
+
+        CodexV2ConversationReducer.clearPendingPrompt(id: pendingPrompt.id, in: &state)
+
+        XCTAssertTrue(state.pendingPrompts.isEmpty)
+        XCTAssertEqual(
+            state.messagesByThreadID[CodexV2ConversationReducer.pendingThreadKey]?.count,
+            1
+        )
+
+        CodexV2ConversationReducer.apply(
+            .runStarted(
+                threadID: "thread-v2",
+                turnID: "turn-v2",
+                globalSequence: 1,
+                model: "gpt-5.4"
+            ),
+            to: &state
+        )
+
+        XCTAssertNil(state.messagesByThreadID["thread-v2"])
+        XCTAssertEqual(
+            state.messagesByThreadID[CodexV2ConversationReducer.pendingThreadKey]?.first?.text,
+            "This send failed once."
+        )
+    }
+
     func testStreamingDeltasMergeIntoStableConversationRows() {
         var state = CodexV2ConversationState()
 
