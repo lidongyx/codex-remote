@@ -41,6 +41,7 @@ struct TurnView: View {
     @State private var hasTriggeredVoiceAutoStop = false
     @State private var voiceRecoveryReason: CodexVoiceFailureReason?
     @State private var isShowingVoiceSetupSheet = false
+    @State private var activeRealtimeVoiceTranscriber: BailianRealtimeVoiceTranscriber?
     @StateObject private var voiceTranscriptionManager = GPTVoiceTranscriptionManager()
 
     // ─── ENTRY POINT ─────────────────────────────────────────────
@@ -1389,41 +1390,39 @@ struct TurnView: View {
         }
     }
 
-    // Stops the recorder, transcribes through the bridge, and appends the final text into the draft.
+    // Stops the active voice flow and finalizes the realtime Bailian session in place.
     private func stopVoiceTranscription() async {
         hasTriggeredVoiceAutoStop = false
         isVoiceTranscribing = true
         defer { isVoiceTranscribing = false }
 
+        guard let realtimeVoiceTranscriber = activeRealtimeVoiceTranscriber else {
+            isVoiceRecording = false
+            voiceTranscriptionManager.cancelRecording()
+            voiceTranscriptionManager.resetMeteringState()
+            return
+        }
+
         do {
-            guard let clip = try voiceTranscriptionManager.stopRecording() else {
-                isVoiceRecording = false
-                voiceTranscriptionManager.resetMeteringState()
-                return
-            }
-
-            defer {
-                try? FileManager.default.removeItem(at: clip.url)
-            }
-
+            voiceTranscriptionManager.cancelRecording()
             isVoiceRecording = false
             voiceTranscriptionManager.resetMeteringState()
-            let transcript = try await codex.transcribeVoiceAudioFile(
-                at: clip.url,
-                durationSeconds: clip.durationSeconds
-            )
+            try await realtimeVoiceTranscriber.finish()
+            activeRealtimeVoiceTranscriber = nil
             clearVoiceRecovery()
-            viewModel.appendVoiceTranscript(transcript)
+            viewModel.commitVoiceTranscriptPreview()
             // Keep voice flows keyboard-free; users can tap into the draft afterward if they want to edit.
             isInputFocused = false
         } catch {
+            activeRealtimeVoiceTranscriber = nil
             isVoiceRecording = false
             voiceTranscriptionManager.resetMeteringState()
+            viewModel.cancelVoiceTranscriptPreview()
             presentVoiceRecovery(for: error)
         }
     }
 
-    // Starts microphone capture directly; auth is resolved when the user stops recording, matching Litter's flow.
+    // Starts microphone capture for Bailian realtime dictation managed by the paired Mac bridge.
     @MainActor
     private func startVoiceRecordingIfReady() async {
         guard !isVoicePreflighting else {
@@ -1459,11 +1458,41 @@ struct TurnView: View {
             guard isVoicePreflightCurrent(preflightGeneration), codex.isConnected else {
                 return
             }
-            try await voiceTranscriptionManager.startRecording()
+
+            let realtimeConfig = try await codex.resolveRealtimeVoiceConfig()
+            let transcriber = BailianRealtimeVoiceTranscriber()
+            let turnViewModel = viewModel
+            try await transcriber.start(config: realtimeConfig) { event in
+                Task { @MainActor in
+                    switch event {
+                    case .partial(let transcript), .final(let transcript):
+                        turnViewModel.updateVoiceTranscriptPreview(transcript)
+                    }
+                }
+            }
+            viewModel.beginVoiceTranscriptPreview()
+
+            do {
+                let realtimeChunkHandler: @Sendable (Data) -> Void = { chunk in
+                    Task {
+                        await transcriber.appendAudioPCM16(chunk)
+                    }
+                }
+                try await voiceTranscriptionManager.startRecording(onRealtimePCMChunk: realtimeChunkHandler)
+            } catch {
+                await transcriber.cancel()
+                viewModel.cancelVoiceTranscriptPreview()
+                throw error
+            }
+
             guard isVoicePreflightCurrent(preflightGeneration), codex.isConnected else {
+                await transcriber.cancel()
+                viewModel.cancelVoiceTranscriptPreview()
                 voiceTranscriptionManager.cancelRecording()
                 return
             }
+
+            activeRealtimeVoiceTranscriber = transcriber
             isVoiceRecording = true
             isInputFocused = false
         } catch {
@@ -1478,11 +1507,18 @@ struct TurnView: View {
         }
 
         voiceTranscriptionManager.cancelRecording()
+        if let activeRealtimeVoiceTranscriber {
+            Task {
+                await activeRealtimeVoiceTranscriber.cancel()
+            }
+            self.activeRealtimeVoiceTranscriber = nil
+            viewModel.cancelVoiceTranscriptPreview()
+        }
         isVoiceRecording = false
         hasTriggeredVoiceAutoStop = false
     }
 
-    // Trigger a hair before the hard validation limit so the saved WAV never misses by timer drift.
+    // Trigger a hair before the hard recording limit so voice capture stops cleanly before the cutoff.
     private var voiceAutoStopThreshold: TimeInterval {
         max(0, CodexVoiceTranscriptionPreflight.maxDurationSeconds - 0.25)
     }
@@ -1524,50 +1560,6 @@ struct TurnView: View {
                     trailingStyle: .action("Reconnect")
                 ),
                 action: .reconnect
-            )
-        case .macLoginRequired:
-            return VoiceRecoveryPresentation(
-                snapshot: ConnectionRecoverySnapshot(
-                    title: "Voice Mode",
-                    summary: "Set up voice authentication on your Mac to use voice mode.",
-                    detail: "Use a ChatGPT session or configure an OpenAI-compatible API provider on the paired Mac, then come back here and try again.",
-                    status: .actionRequired,
-                    trailingStyle: .action("How To Fix")
-                ),
-                action: .showSetupHelp
-            )
-        case .macReauthenticationRequired:
-            return VoiceRecoveryPresentation(
-                snapshot: ConnectionRecoverySnapshot(
-                    title: "Voice Mode",
-                    summary: "Voice mode needs refreshed authentication on your Mac.",
-                    detail: "Refresh the ChatGPT sign-in or API credentials on the paired Mac, then retry voice mode here.",
-                    status: .actionRequired,
-                    trailingStyle: .action("How To Fix")
-                ),
-                action: .showSetupHelp
-            )
-        case .voiceSyncInProgress:
-            return VoiceRecoveryPresentation(
-                snapshot: ConnectionRecoverySnapshot(
-                    title: "Voice Mode",
-                    summary: "Voice mode is still syncing from your Mac.",
-                    detail: "Keep the bridge connected for a moment, then try again.",
-                    status: .syncing,
-                    trailingStyle: .progress
-                ),
-                action: .none
-            )
-        case .chatGPTRequired:
-            return VoiceRecoveryPresentation(
-                snapshot: ConnectionRecoverySnapshot(
-                    title: "Voice Mode",
-                    summary: "Voice mode needs a supported provider on your Mac.",
-                    detail: "Use a ChatGPT session or an OpenAI-compatible API provider on the paired Mac, then try again.",
-                    status: .actionRequired,
-                    trailingStyle: .action("How To Fix")
-                ),
-                action: .showSetupHelp
             )
         case .microphonePermissionRequired:
             return VoiceRecoveryPresentation(

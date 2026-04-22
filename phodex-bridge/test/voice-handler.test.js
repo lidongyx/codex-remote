@@ -1,787 +1,97 @@
 // FILE: voice-handler.test.js
-// Purpose: Verifies bridge-owned voice transcription auth, validation, and retry behavior.
+// Purpose: Verifies bridge-managed Bailian realtime voice config resolution.
 // Layer: Unit test
 // Exports: node:test suite
 // Depends on: node:test, node:assert/strict, ../src/voice-handler
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
 
-const { createVoiceHandler } = require("../src/voice-handler");
+const { resolveRealtimeVoiceConfig } = require("../src/voice-handler");
 
-test("voice/transcribe returns transcribed text without exposing auth tokens", async () => {
-  const responses = [];
-  const fetchCalls = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async (method, params) => {
-      assert.equal(method, "getAuthStatus");
-      assert.deepEqual(params, {
-        includeToken: true,
-        refreshToken: true,
-      });
-      return {
-        authMethod: "chatgpt",
-        authToken: makeJWT({
-          "https://api.openai.com/auth": {
-            chatgpt_account_id: "acct-123",
-          },
-        }),
-        requiresOpenaiAuth: false,
-      };
-    },
-    fetchImpl: async (url, options) => {
-      fetchCalls.push({ url, options });
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { text: "hello world" };
-        },
-      };
-    },
+test("resolveRealtimeVoiceConfig returns Bailian realtime defaults when DASHSCOPE_API_KEY is present", () => {
+  withEnv({
+    DASHSCOPE_API_KEY: "dashscope-test-key",
+    REMODEX_BAILIAN_REALTIME_URL: "",
+    REMODEX_DASHSCOPE_REALTIME_URL: "",
+    DASHSCOPE_REALTIME_URL: "",
+    REMODEX_BAILIAN_REALTIME_MODEL: "",
+    REMODEX_DASHSCOPE_REALTIME_MODEL: "",
+    REMODEX_BAILIAN_REALTIME_LANGUAGE: "",
+    REMODEX_DASHSCOPE_REALTIME_LANGUAGE: "",
+    REMODEX_BAILIAN_REALTIME_VAD_SILENCE_MS: "",
+    REMODEX_BAILIAN_REALTIME_VAD_THRESHOLD: "",
+  }, () => {
+    const config = resolveRealtimeVoiceConfig();
+
+    assert.deepEqual(config, {
+      provider: "bailian_realtime",
+      websocketURL: "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
+      apiKey: "dashscope-test-key",
+      model: "qwen3-asr-flash-realtime",
+      language: "zh",
+      inputSampleRateHz: 16_000,
+      inputEncoding: "pcm16",
+      vadSilenceDurationMs: 400,
+      vadThreshold: 0.5,
+    });
   });
-
-  const handled = handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-1",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 1_200,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  assert.equal(handled, true);
-  await tick();
-
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].url, "https://chatgpt.com/backend-api/transcribe");
-  assert.equal(fetchCalls[0].options.method, "POST");
-  assert.equal(fetchCalls[0].options.headers.Authorization.startsWith("Bearer "), true);
-  assert.equal(fetchCalls[0].options.headers["ChatGPT-Account-Id"], undefined);
-  assert.deepEqual(responses, [{
-    id: "voice-1",
-    result: {
-      text: "hello world",
-    },
-  }]);
 });
 
-test("voice/transcribe retries once after a 401 response", async () => {
-  const responses = [];
-  let authRequestCount = 0;
-  let fetchCount = 0;
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => {
-      authRequestCount += 1;
-      return {
-        authMethod: "chatgpt",
-        authToken: makeJWT({
-          "https://api.openai.com/auth": {
-            chatgpt_account_id: `acct-${authRequestCount}`,
-          },
-        }),
-        requiresOpenaiAuth: false,
-      };
-    },
-    fetchImpl: async () => {
-      fetchCount += 1;
-      if (fetchCount === 1) {
-        return {
-          ok: false,
-          status: 401,
-          async json() {
-            return { error: { message: "expired" } };
-          },
-        };
-      }
+test("resolveRealtimeVoiceConfig prefers Remodex-specific overrides", () => {
+  withEnv({
+    DASHSCOPE_API_KEY: "fallback-key",
+    REMODEX_DASHSCOPE_API_KEY: "preferred-key",
+    REMODEX_BAILIAN_REALTIME_URL: "wss://example.com/realtime",
+    REMODEX_BAILIAN_REALTIME_MODEL: "custom-realtime-model",
+    REMODEX_BAILIAN_REALTIME_LANGUAGE: "en",
+    REMODEX_BAILIAN_REALTIME_VAD_SILENCE_MS: "650",
+    REMODEX_BAILIAN_REALTIME_VAD_THRESHOLD: "0.72",
+  }, () => {
+    const config = resolveRealtimeVoiceConfig();
 
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { text: "second try works" };
-        },
-      };
-    },
+    assert.equal(config.apiKey, "preferred-key");
+    assert.equal(config.websocketURL, "wss://example.com/realtime");
+    assert.equal(config.model, "custom-realtime-model");
+    assert.equal(config.language, "en");
+    assert.equal(config.vadSilenceDurationMs, 650);
+    assert.equal(config.vadThreshold, 0.72);
   });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-2",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 800,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(authRequestCount, 2);
-  assert.equal(fetchCount, 2);
-  assert.equal(responses[0].result?.text, "second try works");
 });
 
-test("voice/transcribe supports OpenAI-compatible API auth using the active provider base_url", async () => {
-  const responses = [];
-  const fetchCalls = [];
-  const configPath = path.join(os.tmpdir(), `remodex-voice-config-${Date.now()}.toml`);
-  fs.writeFileSync(configPath, [
-    'model_provider = "Sub2API"',
-    "",
-    "[model_providers.Sub2API]",
-    'base_url = "https://sub2api.example"',
-    'requires_openai_auth = true',
-    "",
-  ].join("\n"));
-  const previousConfigPath = process.env.REMODEX_CODEX_CONFIG_PATH;
-  process.env.REMODEX_CODEX_CONFIG_PATH = configPath;
+test("resolveRealtimeVoiceConfig throws a realtime_config_missing error when no DASHSCOPE key is configured", () => {
+  withEnv({
+    REMODEX_BAILIAN_REALTIME_API_KEY: "",
+    REMODEX_DASHSCOPE_API_KEY: "",
+    DASHSCOPE_API_KEY: "",
+  }, () => {
+    assert.throws(
+      () => resolveRealtimeVoiceConfig(),
+      (error) => error?.errorCode === "realtime_config_missing"
+        && /DASHSCOPE_API_KEY/i.test(error.message)
+    );
+  });
+});
+
+function withEnv(overrides, fn) {
+  const previousValues = new Map();
   try {
-    const handler = createVoiceHandler({
-      sendCodexRequest: async () => ({
-        authMethod: "apiKey",
-        authToken: "sk-test",
-        requiresOpenaiAuth: false,
-      }),
-      fetchImpl: async (url, options) => {
-        fetchCalls.push({ url, options });
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return { text: "transcribed with api auth" };
-          },
-        };
-      },
-    });
-
-    handler.handleVoiceRequest(JSON.stringify({
-      id: "voice-4",
-      method: "voice/transcribe",
-      params: {
-        mimeType: "audio/wav",
-        audioBase64: makeTestWavBase64(),
-        sampleRateHz: 24_000,
-        durationMs: 300,
-      },
-    }), (response) => {
-      responses.push(JSON.parse(response));
-    });
-
-    await tick();
-
-    assert.equal(fetchCalls.length, 1);
-    assert.equal(fetchCalls[0].url, "https://sub2api.example/v1/audio/transcriptions");
-    assert.equal(fetchCalls[0].options.method, "POST");
-    assert.equal(fetchCalls[0].options.headers.Authorization, "Bearer sk-test");
-    assert.equal(responses[0].result?.text, "transcribed with api auth");
-  } finally {
-    process.env.REMODEX_CODEX_CONFIG_PATH = previousConfigPath;
-    fs.unlinkSync(configPath);
-  }
-});
-
-test("voice/transcribe respects a provider-specific transcription_url from config.toml", async () => {
-  const responses = [];
-  const fetchCalls = [];
-  const configPath = path.join(os.tmpdir(), `remodex-voice-transcription-url-${Date.now()}.toml`);
-  fs.writeFileSync(configPath, [
-    'model_provider = "Sub2API"',
-    "",
-    "[model_providers.Sub2API]",
-    'base_url = "https://sub2api.example"',
-    'transcription_url = "https://sub2api.example/custom/audio/transcriptions"',
-    'requires_openai_auth = true',
-    "",
-  ].join("\n"));
-  const previousConfigPath = process.env.REMODEX_CODEX_CONFIG_PATH;
-  process.env.REMODEX_CODEX_CONFIG_PATH = configPath;
-  try {
-    const handler = createVoiceHandler({
-      sendCodexRequest: async () => ({
-        authMethod: "apiKey",
-        authToken: "sk-test",
-        requiresOpenaiAuth: false,
-      }),
-      fetchImpl: async (url, options) => {
-        fetchCalls.push({ url, options });
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return { text: "custom transcription url worked" };
-          },
-        };
-      },
-    });
-
-    handler.handleVoiceRequest(JSON.stringify({
-      id: "voice-custom-transcription-url",
-      method: "voice/transcribe",
-      params: {
-        mimeType: "audio/wav",
-        audioBase64: makeTestWavBase64(),
-        sampleRateHz: 24_000,
-        durationMs: 300,
-      },
-    }), (response) => {
-      responses.push(JSON.parse(response));
-    });
-
-    await tick();
-
-    assert.equal(fetchCalls.length, 1);
-    assert.equal(fetchCalls[0].url, "https://sub2api.example/custom/audio/transcriptions");
-    assert.equal(responses[0].result?.text, "custom transcription url worked");
-  } finally {
-    process.env.REMODEX_CODEX_CONFIG_PATH = previousConfigPath;
-    fs.unlinkSync(configPath);
-  }
-});
-
-test("voice/transcribe falls back to the alternate API transcription path after a 404", async () => {
-  const responses = [];
-  const fetchCalls = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async (url) => {
-      fetchCalls.push(url);
-      if (fetchCalls.length === 1) {
-        return {
-          ok: false,
-          status: 404,
-          async text() {
-            return "Not Found";
-          },
-        };
+    for (const [key, value] of Object.entries(overrides)) {
+      previousValues.set(key, process.env[key]);
+      if (value === "") {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
       }
-
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { text: "alternate endpoint worked" };
-        },
-      };
-    },
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-alt-path",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.deepEqual(fetchCalls, [
-    "https://sub2api.example/v1/audio/transcriptions",
-    "https://sub2api.example/audio/transcriptions",
-  ]);
-  assert.equal(responses[0].result?.text, "alternate endpoint worked");
-});
-
-test("voice/transcribe retries the next audio model when the selected model is at capacity", async () => {
-  const responses = [];
-  const attemptedModels = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    FormDataImpl: InspectableFormData,
-    fetchImpl: async (_url, options) => {
-      attemptedModels.push(options.body.get("model"));
-      if (attemptedModels.length === 1) {
-        return {
-          ok: false,
-          status: 503,
-          async text() {
-            return "Selected model is at capacity";
-          },
-        };
-      }
-
-      return {
-        ok: true,
-        status: 200,
-        async json() {
-          return { text: "fallback model worked" };
-        },
-      };
-    },
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-capacity-fallback",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.deepEqual(attemptedModels, [
-    "gpt-4o-transcribe",
-    "gpt-4o-mini-transcribe",
-  ]);
-  assert.equal(responses[0].result?.text, "fallback model worked");
-});
-
-test("voice/transcribe returns a friendly busy error after exhausting fallback models", async () => {
-  const responses = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async () => ({
-      ok: false,
-      status: 503,
-      async text() {
-        return "Selected model is at capacity";
-      },
-    }),
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-capacity-exhausted",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].error?.data?.errorCode, "api_transcription_temporarily_unavailable");
-  assert.doesNotMatch(responses[0].error?.message || "", /selected model is at capacity/i);
-  assert.match(responses[0].error?.message || "", /temporarily busy/i);
-});
-
-test("voice/transcribe explains when the provider key exposes audio models but no transcription models", async () => {
-  const responses = [];
-  const fetchCalls = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async (url) => {
-      fetchCalls.push(url);
-      if (url.endsWith("/v1/models")) {
-        return {
-          ok: true,
-          status: 200,
-          async json() {
-            return {
-              data: [
-                { id: "gpt-4o-audio-preview" },
-              ],
-            };
-          },
-        };
-      }
-
-      return {
-        ok: false,
-        status: 400,
-        async text() {
-          return JSON.stringify({
-            error: {
-              message: "Failed to parse request body",
-            },
-          });
-        },
-      };
-    },
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-no-transcription-models",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].error?.data?.errorCode, "api_transcription_model_missing");
-  assert.match(responses[0].error?.message || "", /does not expose OpenAI transcription models/i);
-  assert.equal(fetchCalls.includes("https://sub2api.example/v1/models"), true);
-});
-
-test("voice/transcribe returns an endpoint mismatch error when providers respond with HTML pages", async () => {
-  const responses = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      async text() {
-        return "<!doctype html><html><head><title>Sub2API - AI API Gateway</title></head><body></body></html>";
-      },
-    }),
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-html-page",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].error?.data?.errorCode, "api_transcription_endpoint_missing");
-  assert.match(responses[0].error?.message || "", /did not expose a compatible speech-to-text endpoint/i);
-});
-
-test("voice/transcribe accepts plain-text success bodies from compatible providers", async () => {
-  const responses = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      async text() {
-        return "plain text transcript";
-      },
-    }),
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-plain-text",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].result?.text, "plain text transcript");
-});
-
-test("voice/transcribe accepts nested transcript fields from compatible providers", async () => {
-  const responses = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      baseUrl: "https://sub2api.example",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      async text() {
-        return JSON.stringify({
-          results: [
-            { alternatives: [{ transcript: "nested transcript text" }] },
-          ],
-        });
-      },
-    }),
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-nested-json",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].result?.text, "nested transcript text");
-});
-
-test("voice/transcribe returns a user-facing auth error when Mac auth is missing", async () => {
-  const responses = [];
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: null,
-      authToken: null,
-      requiresOpenaiAuth: true,
-    }),
-    fetchImpl: async () => {
-      throw new Error("fetch should not run");
-    },
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-3",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(responses[0].error?.data?.errorCode, "not_authenticated");
-  assert.match(responses[0].error?.message || "", /Set up ChatGPT or a compatible API provider/);
-});
-
-test("voice/transcribe rejects malformed or non-WAV audio before contacting the provider", async () => {
-  const cases = [
-    {
-      name: "malformed base64",
-      audioBase64: "%%%not-base64%%%",
-      message: /could not be decoded/,
-    },
-    {
-      name: "non-WAV payload",
-      audioBase64: Buffer.from("hello from remodex").toString("base64"),
-      message: /not a valid WAV file/,
-    },
-  ];
-
-  for (const testCase of cases) {
-    const responses = [];
-    let authRequests = 0;
-    let fetchCalls = 0;
-    const handler = createVoiceHandler({
-      sendCodexRequest: async () => {
-        authRequests += 1;
-        throw new Error("auth should not be requested for invalid audio");
-      },
-      fetchImpl: async () => {
-        fetchCalls += 1;
-        throw new Error("fetch should not run for invalid audio");
-      },
-    });
-
-    handler.handleVoiceRequest(JSON.stringify({
-      id: `voice-invalid-${testCase.name}`,
-      method: "voice/transcribe",
-      params: {
-        mimeType: "audio/wav",
-        audioBase64: testCase.audioBase64,
-        sampleRateHz: 24_000,
-        durationMs: 300,
-      },
-    }), (response) => {
-      responses.push(JSON.parse(response));
-    });
-
-    await tick();
-
-    assert.equal(authRequests, 0);
-    assert.equal(fetchCalls, 0);
-    assert.equal(responses[0].error?.data?.errorCode, "invalid_audio");
-    assert.match(responses[0].error?.message || "", testCase.message);
-  }
-});
-
-test("voice/transcribe rejects clips longer than two minutes before contacting the provider", async () => {
-  const responses = [];
-  let authRequests = 0;
-  let fetchCalls = 0;
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => {
-      authRequests += 1;
-      throw new Error("auth should not be requested for overlong audio");
-    },
-    fetchImpl: async () => {
-      fetchCalls += 1;
-      throw new Error("fetch should not run for overlong audio");
-    },
-  });
-
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-too-long",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 120_100,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
-
-  await tick();
-
-  assert.equal(authRequests, 0);
-  assert.equal(fetchCalls, 0);
-  assert.equal(responses[0].error?.data?.errorCode, "duration_too_long");
-  assert.match(responses[0].error?.message || "", /120 seconds/);
-});
-
-// ─── resolveVoiceAuth tests ─────────────────────────────────
-
-const { resolveVoiceAuth } = require("../src/voice-handler");
-
-test("resolveVoiceAuth returns token for ChatGPT sessions", async () => {
-  const result = await resolveVoiceAuth(async (method, params) => {
-    assert.equal(method, "getAuthStatus");
-    assert.deepEqual(params, { includeToken: true, refreshToken: true });
-    return {
-      authMethod: "chatgpt",
-      authToken: "chatgpt-token-abc",
-      requiresOpenaiAuth: false,
-    };
-  });
-
-  assert.deepEqual(result, { token: "chatgpt-token-abc" });
-});
-
-test("resolveVoiceAuth rejects when no token is available regardless of requiresOpenaiAuth", async () => {
-  await assert.rejects(
-    () => resolveVoiceAuth(async () => ({
-      authMethod: null,
-      authToken: null,
-      requiresOpenaiAuth: true,
-    })),
-    (error) => {
-      assert.equal(error.errorCode, "token_missing");
-      return true;
     }
-  );
-});
-
-test("resolveVoiceAuth rejects when Mac has no token", async () => {
-  await assert.rejects(
-    () => resolveVoiceAuth(async () => ({
-      authMethod: "chatgpt",
-      authToken: null,
-      requiresOpenaiAuth: false,
-    })),
-    (error) => {
-      assert.match(error.message, /No ChatGPT session token/);
-      assert.equal(error.errorCode, "token_missing");
-      return true;
+    fn();
+  } finally {
+    for (const [key, value] of previousValues.entries()) {
+      if (value == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
-  );
-});
-
-function makeJWT(payload) {
-  const header = base64UrlEncode({ alg: "none", typ: "JWT" });
-  const body = base64UrlEncode(payload);
-  return `${header}.${body}.signature`;
-}
-
-function makeTestWavBase64() {
-  const wav = Buffer.alloc(46);
-  wav.write("RIFF", 0, "ascii");
-  wav.writeUInt32LE(38, 4);
-  wav.write("WAVE", 8, "ascii");
-  wav.write("fmt ", 12, "ascii");
-  wav.writeUInt32LE(16, 16);
-  wav.writeUInt16LE(1, 20);
-  wav.writeUInt16LE(1, 22);
-  wav.writeUInt32LE(24_000, 24);
-  wav.writeUInt32LE(48_000, 28);
-  wav.writeUInt16LE(2, 32);
-  wav.writeUInt16LE(16, 34);
-  wav.write("data", 36, "ascii");
-  wav.writeUInt32LE(2, 40);
-  wav.writeInt16LE(0, 44);
-  return wav.toString("base64");
-}
-
-function base64UrlEncode(value) {
-  return Buffer.from(JSON.stringify(value))
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-class InspectableFormData {
-  constructor() {
-    this.values = new Map();
   }
-
-  append(name, value) {
-    this.values.set(name, value);
-  }
-
-  get(name) {
-    return this.values.get(name);
-  }
-}
-
-function tick() {
-  return new Promise((resolve) => setImmediate(resolve));
 }

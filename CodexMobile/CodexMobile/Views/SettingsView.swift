@@ -569,7 +569,7 @@ private struct SettingsGPTAccountCard: View {
 
     var body: some View {
         SettingsCard(title: "Voice mode") {
-            Text("Supports the ChatGPT session on your Mac and OpenAI-compatible API mode, including Sub2API.")
+            Text("Voice mode uses Bailian realtime dictation configured on your paired Mac bridge.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 

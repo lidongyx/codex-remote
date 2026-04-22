@@ -1,75 +1,71 @@
 // FILE: CodexService+Voice.swift
-// Purpose: Sends recorded voice clips to the bridge so transcription stays on the Mac-side auth/provider context.
+// Purpose: Reads bridge-managed Bailian realtime config for iPhone-side dictation.
 // Layer: Service
 // Exports: CodexVoiceTranscriptionPreflight, CodexService voice helpers
-// Depends on: Foundation, RPCMessage, JSONValue
+// Depends on: Foundation
 
 import Foundation
 
 struct CodexVoiceTranscriptionPreflight: Equatable, Sendable {
     static let maxDurationSeconds: TimeInterval = 120
-    static let maxByteCount: Int = 10 * 1024 * 1024
+}
 
-    let byteCount: Int
-    let durationSeconds: TimeInterval
-
-    var failureMessage: String? {
-        if durationSeconds > Self.maxDurationSeconds {
-            return "Voice clips must be 120 seconds or less."
-        }
-
-        if byteCount > Self.maxByteCount {
-            return "Voice clips must be smaller than 10 MB."
-        }
-
-        return nil
-    }
-
-    func validate() throws {
-        if let failureMessage {
-            throw CodexServiceError.invalidInput(failureMessage)
-        }
-    }
+struct CodexRealtimeVoiceConfig: Equatable, Sendable {
+    let provider: String
+    let websocketURL: URL
+    let apiKey: String
+    let model: String
+    let language: String
+    let inputSampleRateHz: Int
+    let inputEncoding: String
+    let vadSilenceDurationMs: Int
+    let vadThreshold: Double
 }
 
 extension CodexService {
-    // Sends the local WAV clip through the bridge so the Mac-side ChatGPT/API auth
-    // context stays private and provider-specific routing happens on the bridge.
-    func transcribeVoiceAudioFile(at url: URL, durationSeconds: TimeInterval) async throws -> String {
+    // Resolves bridge-managed Bailian realtime dictation config without proxying microphone audio through the bridge.
+    func resolveRealtimeVoiceConfig() async throws -> CodexRealtimeVoiceConfig {
         guard isConnected else {
             throw CodexServiceError.disconnected
         }
 
-        let audioData = try Data(contentsOf: url)
-        let preflight = CodexVoiceTranscriptionPreflight(
-            byteCount: audioData.count,
-            durationSeconds: durationSeconds
+        let response = try await sendRequest(method: "voice/realtimeConfig", params: nil)
+        guard let payload = response.result?.objectValue else {
+            throw CodexServiceError.invalidResponse("voice/realtimeConfig did not return a payload")
+        }
+
+        guard let provider = payload["provider"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !provider.isEmpty else {
+            throw CodexServiceError.invalidResponse("voice/realtimeConfig did not include a provider")
+        }
+        guard let websocketURLString = payload["websocketURL"]?.stringValue ?? payload["websocketUrl"]?.stringValue,
+              let websocketURL = URL(string: websocketURLString) else {
+            throw CodexServiceError.invalidResponse("voice/realtimeConfig did not include a valid websocket URL")
+        }
+        guard let apiKey = payload["apiKey"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !apiKey.isEmpty else {
+            throw CodexServiceError.invalidResponse("voice/realtimeConfig did not include an API key")
+        }
+        guard let model = payload["model"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !model.isEmpty else {
+            throw CodexServiceError.invalidResponse("voice/realtimeConfig did not include a model")
+        }
+        let language = payload["language"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "zh"
+        let inputSampleRateHz = payload["inputSampleRateHz"]?.intValue ?? 16_000
+        let inputEncoding = payload["inputEncoding"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "pcm16"
+        let vadSilenceDurationMs = payload["vadSilenceDurationMs"]?.intValue ?? 400
+        let vadThreshold = payload["vadThreshold"]?.doubleValue ?? 0.5
+
+        return CodexRealtimeVoiceConfig(
+            provider: provider,
+            websocketURL: websocketURL,
+            apiKey: apiKey,
+            model: model,
+            language: language,
+            inputSampleRateHz: inputSampleRateHz,
+            inputEncoding: inputEncoding,
+            vadSilenceDurationMs: vadSilenceDurationMs,
+            vadThreshold: vadThreshold
         )
-        try preflight.validate()
-
-        let response: RPCMessage
-        do {
-            response = try await sendRequest(
-                method: "voice/transcribe",
-                params: .object([
-                    "mimeType": .string("audio/wav"),
-                    "audioBase64": .string(audioData.base64EncodedString()),
-                    "sampleRateHz": .integer(24_000),
-                    "durationMs": .integer(Int((durationSeconds * 1_000).rounded())),
-                ])
-            )
-        } catch {
-            _ = consumeUnsupportedVoiceBridgeAuth(error)
-            Task { await refreshGPTAccountState() }
-            throw error
-        }
-
-        guard let payload = response.result?.objectValue,
-              let text = payload["text"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else {
-            throw CodexServiceError.invalidResponse("voice/transcribe did not return any text")
-        }
-
-        return text
     }
 }

@@ -23,7 +23,7 @@ const { handleGitRequest } = require("./git-handler");
 const { handleThreadContextRequest } = require("./thread-context-handler");
 const { handleWorkspaceRequest } = require("./workspace-handler");
 const { createNotificationsHandler } = require("./notifications-handler");
-const { createVoiceHandler, resolveVoiceAuth } = require("./voice-handler");
+const { resolveRealtimeVoiceConfig } = require("./voice-handler");
 const {
   composeSanitizedAuthStatusFromSettledResults,
 } = require("./account-status");
@@ -183,10 +183,6 @@ function startBridge({
     endpoint: config.codexEndpoint,
     env: process.env,
     appPath: config.codexAppPath,
-    logPrefix: "[remodex]",
-  });
-  const voiceHandler = createVoiceHandler({
-    sendCodexRequest,
     logPrefix: "[remodex]",
   });
   startBridgeStatusHeartbeat();
@@ -510,9 +506,6 @@ function startBridge({
     if (handleBridgeManagedAccountRequest(rawMessage, sendApplicationResponse)) {
       return;
     }
-    if (voiceHandler.handleVoiceRequest(rawMessage, sendApplicationResponse)) {
-      return;
-    }
     if (handleThreadContextRequest(rawMessage, sendApplicationResponse)) {
       return;
     }
@@ -561,7 +554,7 @@ function startBridge({
     if (method !== "account/status/read"
       && method !== "getAuthStatus"
       && method !== "account/login/openOnMac"
-      && method !== "voice/resolveAuth") {
+      && method !== "voice/realtimeConfig") {
       return false;
     }
 
@@ -590,8 +583,8 @@ function startBridge({
         return readSanitizedAuthStatus();
       case "account/login/openOnMac":
         return openPendingAuthLoginOnMac(params);
-      case "voice/resolveAuth":
-        return resolveVoiceAuth(sendCodexRequest);
+      case "voice/realtimeConfig":
+        return resolveRealtimeVoiceConfig();
       default:
         throw new Error(`Unsupported bridge-managed account method: ${method}`);
     }

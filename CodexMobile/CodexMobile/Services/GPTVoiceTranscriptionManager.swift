@@ -1,7 +1,7 @@
 // FILE: GPTVoiceTranscriptionManager.swift
-// Purpose: Captures microphone audio with AVAudioEngine and produces normalized 24 kHz mono WAV clips for voice transcription.
+// Purpose: Captures microphone audio with AVAudioEngine and streams normalized PCM chunks for realtime dictation.
 // Layer: Service
-// Exports: GPTVoiceRecordingClip, GPTVoiceTranscriptionManager
+// Exports: GPTVoiceTranscriptionManager
 // Depends on: AVFoundation, Foundation
 
 import AVFoundation
@@ -12,12 +12,6 @@ private func codexLogVoiceRecording(_ message: String) {
     print("[VOICE] \(message)")
 }
 
-struct GPTVoiceRecordingClip: Sendable {
-    let url: URL
-    let durationSeconds: TimeInterval
-    let byteCount: Int
-}
-
 enum GPTVoiceTranscriptionError: LocalizedError {
     case alreadyRecording
     case notRecording
@@ -25,9 +19,7 @@ enum GPTVoiceTranscriptionError: LocalizedError {
     case missingMicrophoneInput
     case unableToConfigureAudioSession
     case unableToPrepareAudioEngine
-    case unableToCreateOutputFile
     case transcriptionFailed(String)
-    case authExpired
 
     var errorDescription: String? {
         switch self {
@@ -43,26 +35,19 @@ enum GPTVoiceTranscriptionError: LocalizedError {
             return "Unable to configure the microphone session."
         case .unableToPrepareAudioEngine:
             return "Unable to prepare the microphone recorder."
-        case .unableToCreateOutputFile:
-            return "Unable to create the temporary audio file."
         case .transcriptionFailed(let message):
             return message
-        case .authExpired:
-            return "Your ChatGPT login has expired. Sign in again."
         }
     }
 }
 
 final class GPTVoiceTranscriptionManager: ObservableObject {
     private let audioSession = AVAudioSession.sharedInstance()
-    private static let targetSampleRate: Double = 24_000
-    private static let maxRecordingDurationSeconds = CodexVoiceTranscriptionPreflight.maxDurationSeconds
+    private static let realtimeSampleRate: Double = 16_000
     // Keeps enough metering history for the capsule to resample across the full composer width.
     private static let maxAudioLevels = 240
 
     private var engine: AVAudioEngine?
-    private let collector = AudioBufferCollector()
-    private var captureSampleRate: Double = 0
     private var isRecording = false
     private var durationTimer: Timer?
 
@@ -74,7 +59,7 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
     // ─── Recording lifecycle ─────────────────────────────────────
 
     @MainActor
-    func startRecording() async throws {
+    func startRecording(onRealtimePCMChunk: (@Sendable (Data) -> Void)? = nil) async throws {
         codexLogVoiceRecording("start requested")
         guard !isRecording else {
             throw GPTVoiceTranscriptionError.alreadyRecording
@@ -104,13 +89,10 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
                 "capture format sampleRate=\(format.sampleRate) channels=\(format.channelCount)"
             )
 
-            captureSampleRate = format.sampleRate
-            collector.reset()
+            let realtimeConverter = try makeRealtimeAudioConverter(from: format)
 
             // Collect raw buffers on the tap thread and compute audio levels for the waveform.
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [collector, weak self] buffer, _ in
-                collector.append(buffer)
-
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
                 // Compute RMS power for waveform visualization.
                 guard let channelData = buffer.floatChannelData?[0] else { return }
                 let frameCount = Int(buffer.frameLength)
@@ -133,6 +115,12 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
                         self.audioLevels.removeFirst(self.audioLevels.count - Self.maxAudioLevels)
                     }
                 }
+
+                if let onRealtimePCMChunk,
+                   let realtimeConverter,
+                   let pcmChunk = Self.convertToRealtimePCM16(buffer, using: realtimeConverter) {
+                    onRealtimePCMChunk(pcmChunk)
+                }
             }
 
             self.engine = engine
@@ -153,55 +141,6 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
         }
     }
 
-    // Stops the capture, resamples collected audio to 24 kHz mono WAV, and returns the clip.
-    @MainActor
-    func stopRecording() throws -> GPTVoiceRecordingClip? {
-        guard isRecording else { return nil }
-        isRecording = false
-
-        stopDurationTimer()
-        teardownEngine()
-
-        let buffers = collector.drain()
-        guard !buffers.isEmpty else { return nil }
-
-        // Flatten all captured float samples from the first channel.
-        var allSamples = [Float]()
-        for buf in buffers {
-            guard let data = buf.floatChannelData?[0] else { continue }
-            allSamples.append(contentsOf: UnsafeBufferPointer(start: data, count: Int(buf.frameLength)))
-        }
-
-        guard !allSamples.isEmpty else { return nil }
-
-        let resampled = Self.resample(allSamples, from: captureSampleRate, to: Self.targetSampleRate)
-        let maxSampleCount = Int(Self.targetSampleRate * Self.maxRecordingDurationSeconds)
-        let boundedSamples = Array(resampled.prefix(maxSampleCount))
-        guard !boundedSamples.isEmpty else { return nil }
-
-        let wavData = Self.encodeWAV(samples: boundedSamples, sampleRate: UInt32(Self.targetSampleRate))
-
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("remodex-voice-\(UUID().uuidString)")
-            .appendingPathExtension("wav")
-
-        do {
-            try wavData.write(to: fileURL)
-        } catch {
-            codexLogVoiceRecording("WAV write failed: \(error.localizedDescription)")
-            throw GPTVoiceTranscriptionError.unableToCreateOutputFile
-        }
-
-        let durationSeconds = Double(boundedSamples.count) / Self.targetSampleRate
-        codexLogVoiceRecording("clip ready: \(String(format: "%.1f", durationSeconds))s, \(wavData.count) bytes")
-
-        return GPTVoiceRecordingClip(
-            url: fileURL,
-            durationSeconds: durationSeconds,
-            byteCount: wavData.count
-        )
-    }
-
     @MainActor
     func cancelRecording() {
         let wasRecording = isRecording
@@ -213,7 +152,6 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
         if wasRecording || engine != nil {
             teardownEngine()
         }
-        collector.reset()
     }
 
     @MainActor
@@ -321,174 +259,63 @@ final class GPTVoiceTranscriptionManager: ObservableObject {
         try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    // ─── Resampling ──────────────────────────────────────────────
-
-    // Resamples Float32 audio to Int16 at the target rate using linear interpolation.
-    private static func resample(_ samples: [Float], from srcRate: Double, to dstRate: Double) -> [Int16] {
-        guard !samples.isEmpty else { return [] }
-
-        if abs(srcRate - dstRate) < 1.0 {
-            return samples.map { floatToInt16($0) }
+    private func makeRealtimeAudioConverter(from inputFormat: AVAudioFormat) throws -> AVAudioConverter? {
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Self.realtimeSampleRate,
+            channels: 1,
+            interleaved: true
+        ) else {
+            throw GPTVoiceTranscriptionError.unableToPrepareAudioEngine
         }
 
-        let ratio = dstRate / srcRate
-        let outCount = Int(Double(samples.count) * ratio)
-        guard outCount > 0 else { return [] }
-
-        var out = [Int16](repeating: 0, count: outCount)
-        let lastIndex = samples.count - 1
-
-        for i in 0..<outCount {
-            let srcIdx = Double(i) / ratio
-            let idx = Int(srcIdx)
-            let frac = Float(srcIdx - Double(idx))
-            let s0 = samples[min(idx, lastIndex)]
-            let s1 = samples[min(idx + 1, lastIndex)]
-            out[i] = floatToInt16(s0 + frac * (s1 - s0))
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+            throw GPTVoiceTranscriptionError.unableToPrepareAudioEngine
         }
 
-        return out
+        return converter
     }
 
-    private static func floatToInt16(_ value: Float) -> Int16 {
-        Int16(max(-1.0, min(1.0, value)) * Float(Int16.max))
-    }
-
-    // ─── WAV encoding ────────────────────────────────────────────
-
-    // Builds a minimal RIFF/WAV file from 16-bit mono PCM samples.
-    private static func encodeWAV(samples: [Int16], sampleRate: UInt32) -> Data {
-        let dataSize = UInt32(samples.count * 2)
-        var wav = Data(capacity: 44 + Int(dataSize))
-
-        wav.append(contentsOf: "RIFF".utf8)
-        wav.appendLE(UInt32(36 + dataSize))
-        wav.append(contentsOf: "WAVE".utf8)
-        wav.append(contentsOf: "fmt ".utf8)
-        wav.appendLE(UInt32(16))            // subchunk size
-        wav.appendLE(UInt16(1))             // PCM format
-        wav.appendLE(UInt16(1))             // mono
-        wav.appendLE(sampleRate)            // sample rate
-        wav.appendLE(sampleRate * 2)        // byte rate
-        wav.appendLE(UInt16(2))             // block align
-        wav.appendLE(UInt16(16))            // bits per sample
-        wav.append(contentsOf: "data".utf8)
-        wav.appendLE(dataSize)
-
-        samples.withUnsafeBytes { rawBuffer in
-            wav.append(contentsOf: rawBuffer)
+    private static func convertToRealtimePCM16(
+        _ inputBuffer: AVAudioPCMBuffer,
+        using converter: AVAudioConverter
+    ) -> Data? {
+        let ratio = realtimeSampleRate / max(inputBuffer.format.sampleRate, 1)
+        let estimatedFrameCount = max(1, Int((Double(inputBuffer.frameLength) * ratio).rounded(.up)))
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: converter.outputFormat,
+            frameCapacity: AVAudioFrameCount(estimatedFrameCount)
+        ) else {
+            return nil
         }
 
-        return wav
-    }
-}
-
-// ─── Direct ChatGPT transcription ────────────────────────────────
-
-extension GPTVoiceTranscriptionManager {
-    private static let chatGPTTranscriptionURL = URL(string: "https://chatgpt.com/backend-api/transcribe")!
-    static var transcribeOverride: ((Data, String) async throws -> String)?
-
-    static func transcribe(wavData: Data, token: String) async throws -> String {
-        if let transcribeOverride {
-            return try await transcribeOverride(wavData, token)
-        }
-
-        let boundary = "Remodex-\(UUID().uuidString)"
-
-        var body = Data()
-        body.appendUTF8("--\(boundary)\r\n")
-        body.appendUTF8("Content-Disposition: form-data; name=\"file\"; filename=\"voice.wav\"\r\n")
-        body.appendUTF8("Content-Type: audio/wav\r\n\r\n")
-        body.append(wavData)
-        body.appendUTF8("\r\n--\(boundary)--\r\n")
-
-        var request = URLRequest(url: chatGPTTranscriptionURL)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let http = response as? HTTPURLResponse else {
-            throw GPTVoiceTranscriptionError.transcriptionFailed("Invalid HTTP response.")
-        }
-
-        if http.statusCode == 401 || http.statusCode == 403 {
-            throw GPTVoiceTranscriptionError.authExpired
-        }
-
-        guard (200..<300).contains(http.statusCode) else {
-            let serverMessage = extractErrorMessage(from: data)
-            throw GPTVoiceTranscriptionError.transcriptionFailed(
-                serverMessage ?? "Transcription failed (\(http.statusCode))."
-            )
-        }
-
-        return try decodeTranscriptText(from: data)
-    }
-
-    private static func extractErrorMessage(from data: Data) -> String? {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        if let errorObj = json["error"] as? [String: Any], let msg = errorObj["message"] as? String { return msg }
-        return json["message"] as? String
-    }
-
-    private static func decodeTranscriptText(from data: Data) throws -> String {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GPTVoiceTranscriptionError.transcriptionFailed("Could not parse transcript response.")
-        }
-        for key in ["text", "transcript"] {
-            if let text = json[key] as? String,
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var didProvideInput = false
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outputStatus in
+            if didProvideInput {
+                outputStatus.pointee = .noDataNow
+                return nil
             }
+
+            didProvideInput = true
+            outputStatus.pointee = .haveData
+            return inputBuffer
         }
-        throw GPTVoiceTranscriptionError.transcriptionFailed("Transcript response was empty.")
-    }
-}
 
-private extension Data {
-    mutating func appendUTF8(_ string: String) {
-        if let data = string.data(using: .utf8) {
-            append(data)
+        if conversionError != nil || (status != .haveData && status != .inputRanDry) || outputBuffer.frameLength == 0 {
+            return nil
         }
-    }
-}
 
-// ─── Thread-safe buffer collector ────────────────────────────────
+        let audioBuffer = outputBuffer.audioBufferList.pointee.mBuffers
+        guard let dataPointer = audioBuffer.mData else {
+            return nil
+        }
 
-private final class AudioBufferCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var buffers: [AVAudioPCMBuffer] = []
+        let byteCount = Int(audioBuffer.mDataByteSize)
+        guard byteCount > 0 else {
+            return nil
+        }
 
-    func append(_ buffer: AVAudioPCMBuffer) {
-        lock.lock()
-        buffers.append(buffer)
-        lock.unlock()
-    }
-
-    func drain() -> [AVAudioPCMBuffer] {
-        lock.lock()
-        let result = buffers
-        buffers = []
-        lock.unlock()
-        return result
-    }
-
-    func reset() {
-        lock.lock()
-        buffers = []
-        lock.unlock()
-    }
-}
-
-// ─── Data helpers ────────────────────────────────────────────────
-
-private extension Data {
-    mutating func appendLE<T: FixedWidthInteger>(_ value: T) {
-        var le = value.littleEndian
-        Swift.withUnsafeBytes(of: &le) { append(contentsOf: $0) }
+        return Data(bytes: dataPointer, count: byteCount)
     }
 }

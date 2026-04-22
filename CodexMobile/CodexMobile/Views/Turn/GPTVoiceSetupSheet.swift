@@ -1,5 +1,5 @@
 // FILE: GPTVoiceSetupSheet.swift
-// Purpose: Shows a compact info sheet that explains how Remodex voice uses the paired Mac's provider auth.
+// Purpose: Shows a compact info sheet that explains how Remodex voice uses bridge-managed Bailian realtime dictation.
 // Layer: View
 // Exports: GPTVoiceSetupSheet
 // Depends on: SwiftUI, AppFont
@@ -21,9 +21,9 @@ struct GPTVoiceSetupSheet: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Voice mode uses the provider auth on your Mac")
+                        Text("Voice mode uses Bailian realtime dictation")
                             .font(AppFont.subheadline(weight: .semibold))
-                        Text("Remodex does not keep a separate voice login on the iPhone. It uses the ChatGPT session or OpenAI-compatible API provider already active on your paired Mac, including setups like Sub2API.")
+                        Text("Remodex asks the paired Mac bridge for your local Bailian realtime setup, then keeps the dictation flow on that realtime path only.")
                             .font(AppFont.caption())
                             .foregroundStyle(.secondary)
                     }
@@ -33,26 +33,26 @@ struct GPTVoiceSetupSheet: View {
                     infoStep(
                         number: "1",
                         title: "You speak on the iPhone",
-                        detail: "Remodex records the voice clip locally on the phone when you hold to talk."
+                        detail: "Remodex records microphone audio locally on the phone when you hold to talk."
                     )
                     infoStep(
                         number: "2",
-                        title: "The phone checks your paired Mac",
-                        detail: "Remodex asks the paired Mac bridge for the active ChatGPT session or OpenAI-compatible API auth that is already configured there."
+                        title: "The phone asks your paired Mac bridge for setup",
+                        detail: "Remodex reads the Bailian realtime endpoint, model, and local auth that you configured on the Mac."
                     )
                     infoStep(
                         number: "3",
-                        title: "GPT transcribes the clip",
-                        detail: "The voice clip is sent through the bridge so the Mac-side provider can turn it into text without exposing tokens to the iPhone."
+                        title: "Bailian transcribes while you speak",
+                        detail: "The iPhone streams PCM audio into the Bailian realtime session so the draft updates live while you speak."
                     )
                     infoStep(
                         number: "4",
                         title: "The text comes back to Remodex",
-                        detail: "The transcript returns to the app and gets dropped into your message composer."
+                        detail: "Partial and final transcript text returns to the app and lands directly in your message composer."
                     )
                 }
 
-                Text("In short: iPhone voice in, Mac-side auth stays on the bridge, transcript back to the iPhone.")
+                Text("In short: iPhone records locally, the paired Mac bridge supplies Bailian realtime setup, and transcript text streams back into the draft live.")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
 
