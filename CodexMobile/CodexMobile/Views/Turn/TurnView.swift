@@ -1602,6 +1602,17 @@ struct TurnView: View {
                 ),
                 action: .none
             )
+        case .providerSpecific(let summary, let detail):
+            return VoiceRecoveryPresentation(
+                snapshot: ConnectionRecoverySnapshot(
+                    title: "Voice Mode",
+                    summary: summary,
+                    detail: detail,
+                    status: .actionRequired,
+                    trailingStyle: .action("How To Fix")
+                ),
+                action: .showSetupHelp
+            )
         case .generic(let message):
             return VoiceRecoveryPresentation(
                 snapshot: ConnectionRecoverySnapshot(

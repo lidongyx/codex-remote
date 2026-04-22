@@ -16,6 +16,7 @@ enum CodexVoiceFailureReason: Equatable {
     case microphonePermissionRequired
     case microphoneUnavailable
     case recorderUnavailable
+    case providerSpecific(summary: String, detail: String)
     case generic(String)
 }
 
@@ -119,6 +120,26 @@ extension CodexService {
             return classifyMissingVoiceTokenState()
         case "not_chatgpt":
             return .chatGPTRequired
+        case "api_transcription_temporarily_unavailable":
+            return .providerSpecific(
+                summary: "当前语音服务正忙，请稍后重试。",
+                detail: "Remodex 已经自动尝试了可回退的转写模型，但你 Mac 上当前这条 Sub2API 路由暂时没有空闲的语音转写容量。"
+            )
+        case "api_transcription_endpoint_missing":
+            return .providerSpecific(
+                summary: "当前 Sub2API 路由没有可用的语音转写接口。",
+                detail: "这条 Mac 端 provider 配置虽然能用于文本模型，但没有暴露兼容的 speech-to-text endpoint，所以手机语音无法转写。"
+            )
+        case "api_transcription_model_missing":
+            return .providerSpecific(
+                summary: "当前 Sub2API key 没有绑定语音转写模型。",
+                detail: "这条路由只暴露了聊天或音频预览模型，没有提供 whisper 或 transcribe 类模型，所以 `/v1/audio/transcriptions` 不能工作。"
+            )
+        case "api_transcription_body_rejected":
+            return .providerSpecific(
+                summary: "当前 Sub2API 语音转写后端返回了无效请求。",
+                detail: "Remodex 发出的 WAV multipart 请求已经符合标准 OpenAI transcription 形状，这个错误更像是你 Sub2API 服务器后端的语音实现或上游适配存在问题。"
+            )
         default:
             return nil
         }
@@ -205,6 +226,34 @@ extension CodexService {
         }
         if normalized.contains("requires a chatgpt account") {
             return .chatGPTRequired
+        }
+        if normalized.contains("does not expose openai transcription models")
+            || normalized.contains("did not advertise any transcription-capable models") {
+            return .providerSpecific(
+                summary: "当前 Sub2API key 没有绑定语音转写模型。",
+                detail: "这条路由只暴露了聊天或音频预览模型，没有提供 whisper 或 transcribe 类模型，所以 `/v1/audio/transcriptions` 不能工作。"
+            )
+        }
+        if normalized.contains("did not expose a compatible speech-to-text endpoint") {
+            return .providerSpecific(
+                summary: "当前 Sub2API 路由没有可用的语音转写接口。",
+                detail: "这条 Mac 端 provider 配置虽然能用于文本模型，但没有暴露兼容的 speech-to-text endpoint，所以手机语音无法转写。"
+            )
+        }
+        if normalized.contains("multipart upload")
+            || normalized.contains("provider-side transcription implementation issue")
+            || normalized.contains("failed to parse request body") {
+            return .providerSpecific(
+                summary: "当前 Sub2API 语音转写后端返回了无效请求。",
+                detail: "Remodex 发出的 WAV multipart 请求已经符合标准 OpenAI transcription 形状，这个错误更像是你 Sub2API 服务器后端的语音实现或上游适配存在问题。"
+            )
+        }
+        if normalized.contains("temporarily busy for speech-to-text")
+            || normalized.contains("transcription capacity") {
+            return .providerSpecific(
+                summary: "当前语音服务正忙，请稍后重试。",
+                detail: "Remodex 已经自动尝试了可回退的转写模型，但你 Mac 上当前这条 Sub2API 路由暂时没有空闲的语音转写容量。"
+            )
         }
 
         return .generic(trimmed)

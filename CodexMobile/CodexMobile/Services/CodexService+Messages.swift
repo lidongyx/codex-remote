@@ -989,7 +989,6 @@ extension CodexService {
                 if threadMessages[targetIndex].itemId == nil {
                     threadMessages[targetIndex].itemId = itemId
                 }
-                let keepID = threadMessages[targetIndex].id
                 pruneDuplicateSystemRows(
                     in: &threadMessages,
                     keepIndex: targetIndex,
@@ -997,9 +996,8 @@ extension CodexService {
                     turnId: resolvedTurnId,
                     fileChangePathKeys: incomingPathKeys
                 )
-                if let refreshedIndex = threadMessages.indices.first(where: { threadMessages[$0].id == keepID }) {
-                    threadMessages[refreshedIndex].orderIndex = CodexMessageOrderCounter.next()
-                }
+                // Keep the original insertion slot stable. Late file-change snapshots
+                // should refresh the existing row in place instead of jumping to the tail.
                 threadMessages.sort(by: { $0.orderIndex < $1.orderIndex })
                 messagesByThread[threadId] = threadMessages
                 persistMessages()
@@ -1568,6 +1566,17 @@ extension CodexService {
             streamingSystemMessageByItemID[key] = migratedMessageID
             streamingSystemMessageByItemID.removeValue(forKey: syntheticKey)
             messageID = migratedMessageID
+        } else if let existingMessageID = messagesByThread[threadId]?.reversed().first(where: { candidate in
+            candidate.role == .system
+                && candidate.itemId == itemId
+        })?.id {
+            // Rehydrate the item-id index after persistence/history merges so later deltas
+            // can update the existing row directly instead of relying on text heuristics.
+            streamingSystemMessageByItemID[key] = existingMessageID
+            if let syntheticKey {
+                streamingSystemMessageByItemID[syntheticKey] = existingMessageID
+            }
+            messageID = existingMessageID
         } else if kind == .commandExecution,
                   let resolvedTurnId, !resolvedTurnId.isEmpty,
                   let incomingCommandKey,
@@ -1696,7 +1705,6 @@ extension CodexService {
             }
             if var threadMessages = messagesByThread[threadId],
                let refreshedIndex = threadMessages.indices.first(where: { threadMessages[$0].id == messageID }) {
-                let keepID = threadMessages[refreshedIndex].id
                 if let resolvedTurnId {
                     if kind == .fileChange {
                         pruneDuplicateSystemRows(
@@ -1727,9 +1735,8 @@ extension CodexService {
                         )
                     }
                 }
-                if let finalIndex = threadMessages.indices.first(where: { threadMessages[$0].id == keepID }) {
-                    threadMessages[finalIndex].orderIndex = CodexMessageOrderCounter.next()
-                }
+                // Preserve item-scoped chronology when late deltas reconcile into an
+                // existing row so earlier reasoning/tool activity does not reorder.
                 threadMessages.sort(by: { $0.orderIndex < $1.orderIndex })
                 messagesByThread[threadId] = threadMessages
             }

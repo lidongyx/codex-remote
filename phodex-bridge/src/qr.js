@@ -4,7 +4,7 @@
 // Exports: SHORT_PAIRING_CODE_ALPHABET, SHORT_PAIRING_CODE_LENGTH, createShortPairingCode, printQR
 // Depends on: crypto, qrcode-terminal
 
-const { randomBytes } = require("crypto");
+const { createHash, randomBytes } = require("crypto");
 const qrcode = require("qrcode-terminal");
 
 const SHORT_PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -40,24 +40,34 @@ function normalizePairingSession(pairingSessionOrPayload) {
   };
 }
 
-function printQR(pairingSessionOrPayload) {
+function fingerprintSessionId(sessionId) {
+  const value = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!value) {
+    return "unavailable";
+  }
+
+  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
+}
+
+function printQR(pairingSessionOrPayload, { consoleImpl = console, qrcodeImpl = qrcode } = {}) {
   const { pairingPayload, pairingCode } = normalizePairingSession(pairingSessionOrPayload);
   const payload = JSON.stringify(pairingPayload);
 
-  console.log("\nScan this QR with the iPhone:\n");
-  qrcode.generate(payload, { small: true });
+  consoleImpl.log("\nScan this QR with the iPhone:\n");
+  qrcodeImpl.generate(payload, { small: true });
   if (pairingCode) {
-    console.log("Or paste this pairing code in the iPhone app:\n");
-    console.log(pairingCode);
+    consoleImpl.log("Or paste this pairing code in the iPhone app:\n");
+    consoleImpl.log(pairingCode);
   }
-  console.log(`\nSession ID: ${pairingPayload.sessionId}`);
-  console.log(`Device ID: ${pairingPayload.macDeviceId}`);
-  console.log(`Expires: ${new Date(pairingPayload.expiresAt).toISOString()}\n`);
+  consoleImpl.log(`\nPairing Session: ${fingerprintSessionId(pairingPayload.sessionId)}`);
+  consoleImpl.log(`Device ID: ${pairingPayload.macDeviceId}`);
+  consoleImpl.log(`Expires: ${new Date(pairingPayload.expiresAt).toISOString()}\n`);
 }
 
 module.exports = {
   SHORT_PAIRING_CODE_ALPHABET,
   SHORT_PAIRING_CODE_LENGTH,
   createShortPairingCode,
+  fingerprintSessionId,
   printQR,
 };

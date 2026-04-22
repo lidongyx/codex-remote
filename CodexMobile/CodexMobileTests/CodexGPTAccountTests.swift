@@ -711,6 +711,48 @@ final class CodexGPTAccountTests: XCTestCase {
         XCTAssertEqual(service.classifyVoiceFailure(error), .reconnectRequired)
     }
 
+    func testVoiceProviderTranscriptionModelMissingUsesSpecificRecoveryReason() {
+        let service = makeService()
+        let error = CodexServiceError.rpcError(
+            RPCError(
+                code: -32000,
+                message: "The configured API provider does not expose OpenAI transcription models for this key.",
+                data: .object([
+                    "errorCode": .string("api_transcription_model_missing"),
+                ])
+            )
+        )
+
+        XCTAssertEqual(
+            service.classifyVoiceFailure(error),
+            .providerSpecific(
+                summary: "当前 Sub2API key 没有绑定语音转写模型。",
+                detail: "这条路由只暴露了聊天或音频预览模型，没有提供 whisper 或 transcribe 类模型，所以 `/v1/audio/transcriptions` 不能工作。"
+            )
+        )
+    }
+
+    func testVoiceProviderBodyRejectedUsesSpecificRecoveryReason() {
+        let service = makeService()
+        let error = CodexServiceError.rpcError(
+            RPCError(
+                code: -32000,
+                message: "Failed to parse request body",
+                data: .object([
+                    "errorCode": .string("api_transcription_body_rejected"),
+                ])
+            )
+        )
+
+        XCTAssertEqual(
+            service.classifyVoiceFailure(error),
+            .providerSpecific(
+                summary: "当前 Sub2API 语音转写后端返回了无效请求。",
+                detail: "Remodex 发出的 WAV multipart 请求已经符合标准 OpenAI transcription 形状，这个错误更像是你 Sub2API 服务器后端的语音实现或上游适配存在问题。"
+            )
+        )
+    }
+
     func testSuccessfulLoginKeepsPollingUntilVoiceTokenIsReady() async throws {
         let service = makeService()
         service.isConnected = true

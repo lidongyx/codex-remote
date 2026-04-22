@@ -373,6 +373,44 @@ final class CodexServiceIncomingCommandExecutionTests: XCTestCase {
         XCTAssertEqual(toolRows.map(\.itemId), ["tool-1", "tool-2"])
     }
 
+    func testLiveToolActivityUpdateDoesNotMoveExistingRowAfterAssistant() {
+        let service = makeService()
+        let threadID = "thread-\(UUID().uuidString)"
+        let turnID = "turn-\(UUID().uuidString)"
+        let existingTool = CodexMessage(
+            threadId: threadID,
+            role: .system,
+            kind: .toolActivity,
+            text: "Read A.swift",
+            turnId: turnID,
+            itemId: "tool-1",
+            isStreaming: true,
+            deliveryState: .confirmed
+        )
+        let assistant = CodexMessage(
+            threadId: threadID,
+            role: .assistant,
+            kind: .chat,
+            text: "Done",
+            turnId: turnID,
+            itemId: "assistant-1",
+            isStreaming: false,
+            deliveryState: .confirmed
+        )
+        service.messagesByThread[threadID] = [existingTool, assistant]
+
+        service.upsertStreamingSystemItemMessage(
+            threadId: threadID,
+            turnId: turnID,
+            itemId: "tool-1",
+            kind: .toolActivity,
+            text: "Read A.swift\nRead B.swift",
+            isStreaming: false
+        )
+
+        XCTAssertEqual(service.messages(for: threadID).map(\.id), [existingTool.id, assistant.id])
+    }
+
     func testCompletedToolActivityPlaceholderIsRemovedWhenNoContentArrives() {
         let service = makeService()
         let threadID = "thread-\(UUID().uuidString)"
@@ -467,6 +505,58 @@ final class CodexServiceIncomingCommandExecutionTests: XCTestCase {
         XCTAssertEqual(fileRows.count, 1)
         XCTAssertEqual(fileRows[0].turnId, turnID)
         XCTAssertEqual(fileRows[0].itemId, "file-snapshot")
+    }
+
+    func testLiveFileChangeUpdateDoesNotMoveExistingRowAfterAssistant() {
+        let service = makeService()
+        let threadID = "thread-\(UUID().uuidString)"
+        let turnID = "turn-\(UUID().uuidString)"
+        let existingFileChangeText = """
+        Status: inProgress
+
+        Path: Sources/App.swift
+        Kind: update
+        Totals: +1 -0
+        """
+        let updatedFileChangeText = """
+        Status: completed
+
+        Path: Sources/App.swift
+        Kind: update
+        Totals: +2 -1
+        """
+        let existingFileChange = CodexMessage(
+            threadId: threadID,
+            role: .system,
+            kind: .fileChange,
+            text: existingFileChangeText,
+            turnId: turnID,
+            itemId: "file-1",
+            isStreaming: true,
+            deliveryState: .confirmed
+        )
+        let assistant = CodexMessage(
+            threadId: threadID,
+            role: .assistant,
+            kind: .chat,
+            text: "Patched",
+            turnId: turnID,
+            itemId: "assistant-1",
+            isStreaming: false,
+            deliveryState: .confirmed
+        )
+        service.messagesByThread[threadID] = [existingFileChange, assistant]
+
+        service.upsertStreamingSystemItemMessage(
+            threadId: threadID,
+            turnId: turnID,
+            itemId: "file-1",
+            kind: .fileChange,
+            text: updatedFileChangeText,
+            isStreaming: false
+        )
+
+        XCTAssertEqual(service.messages(for: threadID).map(\.id), [existingFileChange.id, assistant.id])
     }
 
     func testLegacyToolActivityAfterAssistantCreatesNewLaterRow() {
