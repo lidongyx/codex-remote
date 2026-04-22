@@ -243,6 +243,7 @@ final class TurnViewModel {
     @ObservationIgnored var unsupportedSkillsAutocompleteRoots: Set<String> = []
     @ObservationIgnored private var dismissedStructuredPlanPromptRequestKeys: Set<String> = []
     @ObservationIgnored private var dismissingStructuredPlanPromptRequestKeys: Set<String> = []
+    @ObservationIgnored private var voiceTranscriptPreviewPrefix: String?
 
     let maxComposerImages = 4
     let maxFileAutocompleteItems = 6
@@ -429,6 +430,7 @@ final class TurnViewModel {
         resetSkillAutocompleteState()
         resetSlashCommandState(clearPendingSelection: true, clearConfirmedSelection: true)
         isSubagentsSelectionArmed = false
+        voiceTranscriptPreviewPrefix = nil
         input = ""
         composerAttachments.removeAll()
         composerMentionedFiles.removeAll()
@@ -452,6 +454,58 @@ final class TurnViewModel {
         } else {
             input += " \(normalizedTranscript)"
         }
+    }
+
+    // Reserves the current composer state so realtime voice previews can roll back cleanly on cancel/failure.
+    func beginVoiceTranscriptPreview() {
+        guard voiceTranscriptPreviewPrefix == nil else {
+            return
+        }
+
+        voiceTranscriptPreviewPrefix = input
+    }
+
+    // Replaces the temporary voice preview segment while preserving any draft text that existed before recording.
+    func updateVoiceTranscriptPreview(_ transcript: String) {
+        if voiceTranscriptPreviewPrefix == nil {
+            beginVoiceTranscriptPreview()
+        }
+
+        guard let prefix = voiceTranscriptPreviewPrefix else {
+            return
+        }
+
+        let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTranscript.isEmpty else {
+            input = prefix
+            return
+        }
+
+        if prefix.isEmpty {
+            input = normalizedTranscript
+            return
+        }
+
+        if prefix.last?.isWhitespace == true {
+            input = prefix + normalizedTranscript
+        } else {
+            input = "\(prefix) \(normalizedTranscript)"
+        }
+    }
+
+    // Finalizes a realtime preview after the remote recognizer closes successfully.
+    func commitVoiceTranscriptPreview() {
+        voiceTranscriptPreviewPrefix = nil
+    }
+
+    // Restores the original composer when realtime dictation is cancelled or fails.
+    func cancelVoiceTranscriptPreview() {
+        guard let prefix = voiceTranscriptPreviewPrefix else {
+            return
+        }
+
+        input = prefix
+        voiceTranscriptPreviewPrefix = nil
     }
 
     func setPlanModeArmed(_ isArmed: Bool) {

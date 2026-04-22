@@ -1,6 +1,6 @@
 # Remodex — Terms of Use
 
-**Last updated:** March 25, 2026
+**Last updated:** April 22, 2026
 
 These Terms of Use ("Terms") govern your access to and use of the Remodex mobile application ("App"), developed and published by Emanuele Di Pietro ("Developer", "we", "us", or "our"). By downloading, installing, or using the App, you agree to these Terms. If you do not agree, do not use the App.
 
@@ -61,7 +61,7 @@ The App also relies on third-party services, including:
 
 - **Apple** for App Store billing, subscriptions, and platform services
 - **RevenueCat** for subscription/entitlement handling
-- **OpenAI / ChatGPT** for voice transcription when you use voice mode
+- **Configured voice transcription providers** such as Alibaba Cloud Bailian or OpenAI / ChatGPT when you use voice mode, depending on your paired Mac's local setup
 
 Your use of those services may also be subject to their own terms and privacy policies.
 

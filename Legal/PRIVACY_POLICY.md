@@ -1,6 +1,6 @@
 # Remodex — Data Protection Notice
 
-**Last updated:** March 25, 2026
+**Last updated:** April 22, 2026
 
 This Data Protection Notice explains how the Remodex mobile application ("App"), developed by Emanuele Di Pietro ("Developer", "we", "us", or "our"), handles your information. Remodex is designed to let you control a Codex runtime on your Mac from your iPhone. Most conversation and workspace activity is processed on your paired Mac, but the App Store version can also use developer-operated relay infrastructure to connect your devices.
 
@@ -23,7 +23,7 @@ Remodex is a local-first remote companion for Codex on your Mac. In practice, th
 
 - **Chat messages and prompts** — Your messages are sent from the iPhone to your paired Mac for processing. After the secure transport handshake is complete, the relay forwards encrypted payloads and cannot read message contents.
 - **Photo attachments** — Images you attach from the camera or photo library are sent to your paired Mac over the secure channel.
-- **Voice recordings** — When you use voice mode, the App records a temporary WAV file on your iPhone and uploads that audio directly from the iPhone to OpenAI/ChatGPT for transcription. The request is authenticated with a ChatGPT token resolved from your paired Mac over the encrypted Remodex channel.
+- **Voice recordings** — When you use voice mode, the App records temporary audio on your iPhone and may stream that audio directly from the iPhone to the speech-to-text provider configured through your paired Mac, such as Alibaba Cloud Bailian realtime ASR or OpenAI/ChatGPT transcription. Provider selection depends on your local paired-Mac configuration.
 - **Git operations** — Commands you initiate from the App, such as commit, pull, push, branch, or status actions, are executed on your paired Mac.
 
 ### 2.2 Information Collected Automatically
@@ -80,13 +80,14 @@ This infrastructure may process:
 
 Once the secure session is active, the hosted relay does **not** decrypt your Remodex application payloads.
 
-### 4.2 OpenAI / ChatGPT
+### 4.2 Voice Transcription Providers
 
-When you use voice mode, your audio recording is sent to OpenAI/ChatGPT for speech-to-text transcription.
+When you use voice mode, your audio recording may be sent to the speech-to-text provider configured through your paired Mac, such as Alibaba Cloud Bailian realtime ASR or OpenAI/ChatGPT transcription.
 
 This is the only instance where your data is processed by a third-party AI service.
 
-- Privacy policy: [openai.com/privacy](https://openai.com/privacy)
+- Alibaba Cloud privacy policy: [www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-privacy-policy](https://www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-privacy-policy)
+- OpenAI privacy policy: [openai.com/privacy](https://openai.com/privacy)
 
 ### 4.3 RevenueCat
 
@@ -155,7 +156,7 @@ You can manage or cancel your subscription through Apple account settings or thr
 
 Depending on your jurisdiction, you may have rights to access, correct, delete, restrict, or object to the processing of personal information, and to request portability where applicable.
 
-Because Remodex is primarily local-first, much of your data remains under your direct control on your devices. We do not maintain a centralized database of your personal data. Some data may be processed or retained by Apple, RevenueCat, and OpenAI according to their own operational needs and policies.
+Because Remodex is primarily local-first, much of your data remains under your direct control on your devices. We do not maintain a centralized database of your personal data. Some data may be processed or retained by Apple, RevenueCat, and whichever voice transcription provider you configured through your paired Mac according to their own operational needs and policies.
 
 ### 8.1 California Notice
 
@@ -167,7 +168,7 @@ The App is not directed to children under 13, or the minimum age required by loc
 
 ## 10. International Transfers
 
-Depending on where you use the App and where service providers or hosted infrastructure are located, data processed by OpenAI, RevenueCat, Apple, or the hosted relay may be handled outside your country of residence.
+Depending on where you use the App and where service providers or hosted infrastructure are located, data processed by your configured voice transcription provider, RevenueCat, Apple, or the hosted relay may be handled outside your country of residence.
 
 ## 11. Changes to This Policy
 
