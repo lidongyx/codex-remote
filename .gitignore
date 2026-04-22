@@ -31,6 +31,8 @@ security_best_practices_report.md
 *.swo
 *~
 *.tgz
+target/
+.build/
 
 # Minified JS bundles (not part of this project)
 /main.js

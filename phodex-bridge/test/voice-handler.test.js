@@ -6,6 +6,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const { createVoiceHandler } = require("../src/voice-handler");
 
@@ -129,39 +132,63 @@ test("voice/transcribe retries once after a 401 response", async () => {
   assert.equal(responses[0].result?.text, "second try works");
 });
 
-test("voice/transcribe rejects API-key auth because voice remains ChatGPT-only", async () => {
+test("voice/transcribe supports OpenAI-compatible API auth using the active provider base_url", async () => {
   const responses = [];
-  let fetchCalled = false;
-  const handler = createVoiceHandler({
-    sendCodexRequest: async () => ({
-      authMethod: "apiKey",
-      authToken: "sk-test",
-      requiresOpenaiAuth: false,
-    }),
-    fetchImpl: async () => {
-      fetchCalled = true;
-      throw new Error("fetch should not run for API-key auth");
-    },
-  });
+  const fetchCalls = [];
+  const configPath = path.join(os.tmpdir(), `remodex-voice-config-${Date.now()}.toml`);
+  fs.writeFileSync(configPath, [
+    'model_provider = "Sub2API"',
+    "",
+    "[model_providers.Sub2API]",
+    'base_url = "https://sub2api.example"',
+    'requires_openai_auth = true',
+    "",
+  ].join("\n"));
+  const previousConfigPath = process.env.REMODEX_CODEX_CONFIG_PATH;
+  process.env.REMODEX_CODEX_CONFIG_PATH = configPath;
+  try {
+    const handler = createVoiceHandler({
+      sendCodexRequest: async () => ({
+        authMethod: "apiKey",
+        authToken: "sk-test",
+        requiresOpenaiAuth: false,
+      }),
+      fetchImpl: async (url, options) => {
+        fetchCalls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { text: "transcribed with api auth" };
+          },
+        };
+      },
+    });
 
-  handler.handleVoiceRequest(JSON.stringify({
-    id: "voice-4",
-    method: "voice/transcribe",
-    params: {
-      mimeType: "audio/wav",
-      audioBase64: makeTestWavBase64(),
-      sampleRateHz: 24_000,
-      durationMs: 300,
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  });
+    handler.handleVoiceRequest(JSON.stringify({
+      id: "voice-4",
+      method: "voice/transcribe",
+      params: {
+        mimeType: "audio/wav",
+        audioBase64: makeTestWavBase64(),
+        sampleRateHz: 24_000,
+        durationMs: 300,
+      },
+    }), (response) => {
+      responses.push(JSON.parse(response));
+    });
 
-  await tick();
+    await tick();
 
-  assert.equal(fetchCalled, false);
-  assert.equal(responses[0].error?.data?.errorCode, "not_chatgpt");
-  assert.match(responses[0].error?.message || "", /requires a ChatGPT account/);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].url, "https://sub2api.example/audio/transcriptions");
+    assert.equal(fetchCalls[0].options.method, "POST");
+    assert.equal(fetchCalls[0].options.headers.Authorization, "Bearer sk-test");
+    assert.equal(responses[0].result?.text, "transcribed with api auth");
+  } finally {
+    process.env.REMODEX_CODEX_CONFIG_PATH = previousConfigPath;
+    fs.unlinkSync(configPath);
+  }
 });
 
 test("voice/transcribe returns a user-facing auth error when Mac auth is missing", async () => {
@@ -193,7 +220,7 @@ test("voice/transcribe returns a user-facing auth error when Mac auth is missing
   await tick();
 
   assert.equal(responses[0].error?.data?.errorCode, "not_authenticated");
-  assert.match(responses[0].error?.message || "", /Sign in with ChatGPT/);
+  assert.match(responses[0].error?.message || "", /Set up ChatGPT or a compatible API provider/);
 });
 
 test("voice/transcribe rejects malformed or non-WAV audio before contacting the provider", async () => {
@@ -364,5 +391,5 @@ function base64UrlEncode(value) {
 }
 
 function tick() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  return new Promise((resolve) => setImmediate(resolve));
 }

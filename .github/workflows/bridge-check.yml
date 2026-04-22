@@ -4,13 +4,11 @@ on:
   push:
     paths:
       - ".github/workflows/bridge-check.yml"
-      - "package.json"
       - "phodex-bridge/**"
       - "relay/**"
   pull_request:
     paths:
       - ".github/workflows/bridge-check.yml"
-      - "package.json"
       - "phodex-bridge/**"
       - "relay/**"
 

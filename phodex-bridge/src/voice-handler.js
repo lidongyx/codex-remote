@@ -4,7 +4,17 @@
 // Exports: createVoiceHandler
 // Depends on: global fetch/FormData/Blob, local codex app-server auth via sendCodexRequest
 
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
 const CHATGPT_TRANSCRIPTIONS_URL = "https://chatgpt.com/backend-api/transcribe";
+const DEFAULT_OPENAI_TRANSCRIPTIONS_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_API_TRANSCRIPTION_MODELS = Object.freeze([
+  "gpt-4o-transcribe",
+  "gpt-4o-mini-transcribe",
+  "whisper-1",
+]);
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_DURATION_MS = 120_000;
 
@@ -120,6 +130,18 @@ async function requestTranscription({
   BlobImpl,
   sendCodexRequest,
 }) {
+  if (authContext.kind === "api") {
+    return requestAPITranscription({
+      authContext,
+      audioBuffer,
+      mimeType,
+      fetchImpl,
+      FormDataImpl,
+      BlobImpl,
+      sendCodexRequest,
+    });
+  }
+
   const makeAttempt = async (activeAuthContext) => {
     const formData = new FormDataImpl();
     formData.append("file", new BlobImpl([audioBuffer], { type: mimeType }), "voice.wav");
@@ -169,6 +191,141 @@ async function requestTranscription({
   return { text };
 }
 
+async function requestAPITranscription({
+  authContext,
+  audioBuffer,
+  mimeType,
+  fetchImpl,
+  FormDataImpl,
+  BlobImpl,
+  sendCodexRequest,
+}) {
+  let activeAuthContext = authContext;
+  let hasRetriedAuth = false;
+
+  for (const model of activeAuthContext.models) {
+    let response = await makeAPIAttempt({
+      authContext: activeAuthContext,
+      model,
+      audioBuffer,
+      mimeType,
+      fetchImpl,
+      FormDataImpl,
+      BlobImpl,
+    });
+
+    if ((response.status === 401 || response.status === 403) && !hasRetriedAuth) {
+      activeAuthContext = await loadAuthContext(sendCodexRequest);
+      hasRetriedAuth = true;
+
+      if (activeAuthContext.kind !== "api") {
+        return requestTranscription({
+          authContext: activeAuthContext,
+          audioBuffer,
+          mimeType,
+          fetchImpl,
+          FormDataImpl,
+          BlobImpl,
+          sendCodexRequest,
+        });
+      }
+
+      response = await makeAPIAttempt({
+        authContext: activeAuthContext,
+        model,
+        audioBuffer,
+        mimeType,
+        fetchImpl,
+        FormDataImpl,
+        BlobImpl,
+      });
+    }
+
+    if (response.ok) {
+      const payload = await response.json().catch(() => null);
+      const text = readString(payload?.text) || readString(payload?.transcript);
+      if (!text) {
+        throw voiceError("transcription_invalid_response", "The transcription response did not include any text.");
+      }
+      return { text };
+    }
+
+    const errorMessage = await readProviderErrorMessage(response);
+    if (response.status === 401 || response.status === 403) {
+      throw voiceError("not_authenticated", "Your API-based voice authentication on the Mac is no longer valid. Refresh it and try again.");
+    }
+
+    if (shouldRetryAPIAudioModel(response.status, errorMessage)) {
+      continue;
+    }
+
+    throw voiceError("transcription_failed", errorMessage);
+  }
+
+  throw voiceError(
+    "api_transcription_unavailable",
+    "The configured API provider does not support the speech-to-text models Remodex tried. Set REMODEX_VOICE_TRANSCRIPTION_MODEL on your Mac if you need a specific OpenAI-compatible model."
+  );
+}
+
+async function makeAPIAttempt({
+  authContext,
+  model,
+  audioBuffer,
+  mimeType,
+  fetchImpl,
+  FormDataImpl,
+  BlobImpl,
+}) {
+  const formData = new FormDataImpl();
+  formData.append("file", new BlobImpl([audioBuffer], { type: mimeType }), "voice.wav");
+  formData.append("model", model);
+
+  return fetchImpl(authContext.transcriptionURL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${authContext.token}`,
+    },
+    body: formData,
+  });
+}
+
+async function readProviderErrorMessage(response) {
+  let errorMessage = `Transcription failed with status ${response.status}.`;
+
+  try {
+    const errorPayload = await response.json();
+    const providerMessage = firstNonEmptyString([
+      errorPayload?.error?.message,
+      errorPayload?.message,
+      errorPayload?.detail,
+    ]);
+    if (providerMessage) {
+      errorMessage = providerMessage;
+    }
+  } catch {
+    // Keep the generic message when the provider body is empty or non-JSON.
+  }
+
+  return errorMessage;
+}
+
+function shouldRetryAPIAudioModel(statusCode, errorMessage) {
+  if (statusCode !== 400 && statusCode !== 422) {
+    return false;
+  }
+
+  const normalized = String(errorMessage || "").toLowerCase();
+  return normalized.includes("model")
+    && (
+      normalized.includes("unsupported")
+      || normalized.includes("not found")
+      || normalized.includes("does not exist")
+      || normalized.includes("unknown")
+      || normalized.includes("invalid")
+    );
+}
+
 // Reads the current bridge-owned auth state from the local codex app-server and refreshes if needed.
 async function loadAuthContext(sendCodexRequest) {
   const authStatus = await sendCodexRequest("getAuthStatus", {
@@ -181,13 +338,23 @@ async function loadAuthContext(sendCodexRequest) {
   const isChatGPT = authMethod === "chatgpt" || authMethod === "chatgptAuthTokens";
 
   if (!token) {
-    throw voiceError("not_authenticated", "Sign in with ChatGPT before using voice transcription.");
+    throw voiceError(
+      "not_authenticated",
+      "Set up ChatGPT or a compatible API provider on the Mac before using voice transcription."
+    );
   }
   if (!isChatGPT) {
-    throw voiceError("not_chatgpt", "Voice transcription requires a ChatGPT account.");
+    return {
+      kind: "api",
+      authMethod: authMethod || "apiKey",
+      token,
+      transcriptionURL: resolveConfiguredAPIAudioTranscriptionsURL(authStatus),
+      models: resolveConfiguredAPIAudioModels(),
+    };
   }
 
   return {
+    kind: "chatgpt",
     authMethod,
     token,
     isChatGPT,
@@ -300,9 +467,6 @@ async function resolveVoiceAuth(sendCodexRequest) {
   const token = readString(authStatus?.authToken);
   const isChatGPT = authMethod === "chatgpt" || authMethod === "chatgptAuthTokens";
 
-  // Check for a usable ChatGPT token first. The runtime may set requiresOpenaiAuth
-  // even when a valid ChatGPT session is present (the flag is about the runtime's
-  // preferred auth mode, not whether ChatGPT tokens are actually available).
   if (isChatGPT && token) {
     return { token };
   }
@@ -312,7 +476,228 @@ async function resolveVoiceAuth(sendCodexRequest) {
     throw voiceError("token_missing", "No ChatGPT session token available. Sign in to ChatGPT on the Mac.");
   }
 
-  throw voiceError("not_chatgpt", "Voice transcription requires a ChatGPT account.");
+  throw voiceError(
+    "not_chatgpt",
+    "This iPhone version expects a ChatGPT session for direct voice upload. Update Remodex on your iPhone to use bridge-based voice transcription with API providers."
+  );
+}
+
+function resolveConfiguredAPIAudioTranscriptionsURL(authStatus) {
+  const explicitBaseUrl = firstNonEmptyString([
+    authStatus?.transcriptionUrl,
+    authStatus?.transcriptionURL,
+    authStatus?.audioTranscriptionsUrl,
+    authStatus?.audioTranscriptionsURL,
+  ]);
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+
+  const configuredBaseUrl = firstNonEmptyString([
+    authStatus?.baseUrl,
+    authStatus?.baseURL,
+    authStatus?.apiBaseUrl,
+    authStatus?.apiBaseURL,
+    authStatus?.providerBaseUrl,
+    authStatus?.provider_base_url,
+    resolveConfiguredOpenAIBaseUrl(authStatus),
+    DEFAULT_OPENAI_TRANSCRIPTIONS_BASE_URL,
+  ]);
+
+  return joinURLPath(configuredBaseUrl, "audio/transcriptions");
+}
+
+function resolveConfiguredAPIAudioModels() {
+  return uniqueStrings([
+    process.env.REMODEX_VOICE_TRANSCRIPTION_MODEL,
+    ...DEFAULT_API_TRANSCRIPTION_MODELS,
+  ]);
+}
+
+function resolveConfiguredOpenAIBaseUrl(authStatus) {
+  const envBaseUrl = firstNonEmptyString([
+    process.env.OPENAI_BASE_URL,
+    process.env.OPENAI_API_BASE_URL,
+    process.env.OPENAI_API_BASE,
+    process.env.CODEX_OPENAI_BASE_URL,
+  ]);
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+
+  const providerName = firstNonEmptyString([
+    authStatus?.modelProvider,
+    authStatus?.model_provider,
+    authStatus?.providerName,
+    authStatus?.provider_name,
+  ]);
+  const config = readCodexConfigToml();
+  if (!config) {
+    return "";
+  }
+
+  const activeProviderName = providerName || config.modelProvider;
+  if (!activeProviderName) {
+    return "";
+  }
+
+  return firstNonEmptyString([
+    config.modelProviders[activeProviderName]?.baseUrl,
+    config.modelProviders[activeProviderName]?.base_url,
+  ]);
+}
+
+function readCodexConfigToml() {
+  const configPath = process.env.REMODEX_CODEX_CONFIG_PATH
+    || path.join(os.homedir(), ".codex", "config.toml");
+
+  let rawConfig;
+  try {
+    rawConfig = fs.readFileSync(configPath, "utf8");
+  } catch {
+    return null;
+  }
+
+  const parsed = {
+    modelProvider: "",
+    modelProviders: {},
+  };
+  let currentSection = "";
+
+  for (const rawLine of rawConfig.split(/\r?\n/)) {
+    const line = stripTomlComment(rawLine).trim();
+    if (!line) {
+      continue;
+    }
+
+    const sectionMatch = line.match(/^\[(.+)\]$/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1].trim();
+      continue;
+    }
+
+    const keyValueMatch = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+    if (!keyValueMatch) {
+      continue;
+    }
+
+    const key = keyValueMatch[1];
+    const value = parseTomlScalar(keyValueMatch[2]);
+    if (!currentSection && key === "model_provider") {
+      parsed.modelProvider = readString(value) || "";
+      continue;
+    }
+
+    const providerSectionMatch = currentSection.match(/^model_providers\.(.+)$/);
+    if (!providerSectionMatch) {
+      continue;
+    }
+
+    const providerName = providerSectionMatch[1].replace(/^\"(.*)\"$/, "$1");
+    if (!providerName) {
+      continue;
+    }
+
+    if (!parsed.modelProviders[providerName]) {
+      parsed.modelProviders[providerName] = {};
+    }
+    parsed.modelProviders[providerName][key] = value;
+  }
+
+  return parsed;
+}
+
+function stripTomlComment(line) {
+  let quote = null;
+  let escaped = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === "\\" && !escaped) {
+        escaped = true;
+        continue;
+      }
+      if (character === quote && !escaped) {
+        quote = null;
+      }
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "#") {
+      return line.slice(0, index);
+    }
+  }
+
+  return line;
+}
+
+function parseTomlScalar(rawValue) {
+  const value = rawValue.trim();
+  if (!value) {
+    return "";
+  }
+
+  if ((value.startsWith("\"") && value.endsWith("\""))
+    || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return value;
+}
+
+function joinURLPath(baseUrl, suffix) {
+  const normalizedBaseUrl = ensureTrailingSlash(baseUrl);
+  try {
+    return new URL(suffix.replace(/^\/+/, ""), normalizedBaseUrl).toString();
+  } catch {
+    return `${normalizedBaseUrl.replace(/\/+$/, "")}/${suffix.replace(/^\/+/, "")}`;
+  }
+}
+
+function ensureTrailingSlash(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return `${DEFAULT_OPENAI_TRANSCRIPTIONS_BASE_URL}/`;
+  }
+
+  return normalized.endsWith("/") ? normalized : `${normalized}/`;
+}
+
+function firstNonEmptyString(values) {
+  for (const value of values) {
+    const normalized = readString(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
+function uniqueStrings(values) {
+  const unique = [];
+  for (const value of values) {
+    const normalized = readString(value);
+    if (normalized && !unique.includes(normalized)) {
+      unique.push(normalized);
+    }
+  }
+  return unique;
 }
 
 module.exports = {
