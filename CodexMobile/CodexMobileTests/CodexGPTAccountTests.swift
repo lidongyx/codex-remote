@@ -599,13 +599,12 @@ final class CodexGPTAccountTests: XCTestCase {
         }
     }
 
-    func testVoiceTranscriptionUsesBridgeResolvedTokenForDirectUpload() async throws {
+    func testVoiceTranscriptionSendsAudioThroughBridgeRPC() async throws {
         let service = makeService()
         service.isConnected = true
         let clipURL = try makeTemporaryVoiceClipURL()
         defer { try? FileManager.default.removeItem(at: clipURL) }
         let expectedAudio = makeTestWavData()
-        let expectedToken = "chatgpt-token-123"
 
         var observedMethod: String?
         var observedParams: JSONValue?
@@ -615,23 +614,23 @@ final class CodexGPTAccountTests: XCTestCase {
             return RPCMessage(
                 id: .string(UUID().uuidString),
                 result: .object([
-                    "token": .string(expectedToken),
+                    "text": .string("transcribed by bridge"),
                 ]),
                 includeJSONRPC: false
             )
         }
-        GPTVoiceTranscriptionManager.transcribeOverride = { wavData, token in
-            XCTAssertEqual(wavData, expectedAudio)
-            XCTAssertEqual(token, expectedToken)
-            return "transcribed on phone"
-        }
-        defer { GPTVoiceTranscriptionManager.transcribeOverride = nil }
 
         let transcript = try await service.transcribeVoiceAudioFile(at: clipURL, durationSeconds: 1.25)
 
-        XCTAssertEqual(transcript, "transcribed on phone")
-        XCTAssertEqual(observedMethod, "voice/resolveAuth")
-        XCTAssertNil(observedParams)
+        XCTAssertEqual(transcript, "transcribed by bridge")
+        XCTAssertEqual(observedMethod, "voice/transcribe")
+        guard case .object(let payload)? = observedParams else {
+            return XCTFail("Expected voice/transcribe params")
+        }
+        XCTAssertEqual(payload["mimeType"]?.stringValue, "audio/wav")
+        XCTAssertEqual(payload["sampleRateHz"]?.intValue, 24_000)
+        XCTAssertEqual(payload["durationMs"]?.intValue, 1_250)
+        XCTAssertEqual(Data(base64Encoded: payload["audioBase64"]?.stringValue ?? ""), expectedAudio)
     }
 
     func testUnsupportedVoiceBridgeAuthMarksBridgeSessionAsUnsupported() {

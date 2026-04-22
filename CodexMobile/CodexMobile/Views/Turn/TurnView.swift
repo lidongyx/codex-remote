@@ -1529,8 +1529,8 @@ struct TurnView: View {
             return VoiceRecoveryPresentation(
                 snapshot: ConnectionRecoverySnapshot(
                     title: "Voice Mode",
-                    summary: "Sign in to ChatGPT on your Mac to use voice mode.",
-                    detail: "Open ChatGPT on the paired Mac, sign in there, then come back here and try again.",
+                    summary: "Set up voice authentication on your Mac to use voice mode.",
+                    detail: "Use a ChatGPT session or configure an OpenAI-compatible API provider on the paired Mac, then come back here and try again.",
                     status: .actionRequired,
                     trailingStyle: .action("How To Fix")
                 ),
@@ -1540,8 +1540,8 @@ struct TurnView: View {
             return VoiceRecoveryPresentation(
                 snapshot: ConnectionRecoverySnapshot(
                     title: "Voice Mode",
-                    summary: "ChatGPT voice needs a fresh sign-in on your Mac.",
-                    detail: "Open ChatGPT on the paired Mac, sign in again there, then retry voice mode here.",
+                    summary: "Voice mode needs refreshed authentication on your Mac.",
+                    detail: "Refresh the ChatGPT sign-in or API credentials on the paired Mac, then retry voice mode here.",
                     status: .actionRequired,
                     trailingStyle: .action("How To Fix")
                 ),
@@ -1562,8 +1562,8 @@ struct TurnView: View {
             return VoiceRecoveryPresentation(
                 snapshot: ConnectionRecoverySnapshot(
                     title: "Voice Mode",
-                    summary: "Voice mode needs a ChatGPT session on your Mac.",
-                    detail: "API-key-only auth is not enough here. Sign in to ChatGPT on the paired Mac, then try again.",
+                    summary: "Voice mode needs a supported provider on your Mac.",
+                    detail: "Use a ChatGPT session or an OpenAI-compatible API provider on the paired Mac, then try again.",
                     status: .actionRequired,
                     trailingStyle: .action("How To Fix")
                 ),

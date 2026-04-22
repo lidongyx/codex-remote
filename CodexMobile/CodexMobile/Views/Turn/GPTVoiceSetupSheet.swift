@@ -1,5 +1,5 @@
 // FILE: GPTVoiceSetupSheet.swift
-// Purpose: Shows a compact info sheet that explains how Remodex voice uses the paired Mac's ChatGPT session.
+// Purpose: Shows a compact info sheet that explains how Remodex voice uses the paired Mac's provider auth.
 // Layer: View
 // Exports: GPTVoiceSetupSheet
 // Depends on: SwiftUI, AppFont
@@ -21,9 +21,9 @@ struct GPTVoiceSetupSheet: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("GPT voice uses the ChatGPT session on your Mac")
+                        Text("Voice mode uses the provider auth on your Mac")
                             .font(AppFont.subheadline(weight: .semibold))
-                        Text("Remodex does not keep a separate GPT voice login on the iPhone. It uses the ChatGPT session already active on your paired Mac.")
+                        Text("Remodex does not keep a separate voice login on the iPhone. It uses the ChatGPT session or OpenAI-compatible API provider already active on your paired Mac, including setups like Sub2API.")
                             .font(AppFont.caption())
                             .foregroundStyle(.secondary)
                     }
@@ -38,12 +38,12 @@ struct GPTVoiceSetupSheet: View {
                     infoStep(
                         number: "2",
                         title: "The phone checks your paired Mac",
-                        detail: "Remodex asks the paired Mac bridge for the active ChatGPT session that is already connected there."
+                        detail: "Remodex asks the paired Mac bridge for the active ChatGPT session or OpenAI-compatible API auth that is already configured there."
                     )
                     infoStep(
                         number: "3",
                         title: "GPT transcribes the clip",
-                        detail: "The voice clip is sent with that Mac-backed GPT session so GPT can turn it into text."
+                        detail: "The voice clip is sent through the bridge so the Mac-side provider can turn it into text without exposing tokens to the iPhone."
                     )
                     infoStep(
                         number: "4",
@@ -52,7 +52,7 @@ struct GPTVoiceSetupSheet: View {
                     )
                 }
 
-                Text("In short: iPhone voice in, Mac ChatGPT session for auth, GPT transcript back to the iPhone.")
+                Text("In short: iPhone voice in, Mac-side auth stays on the bridge, transcript back to the iPhone.")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
 
@@ -61,7 +61,7 @@ struct GPTVoiceSetupSheet: View {
             .padding(20)
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
-            .navigationTitle("How GPT Voice Works")
+            .navigationTitle("How Voice Mode Works")
             .navigationBarTitleDisplayMode(.inline)
         }
     }

@@ -25,9 +25,11 @@ struct SettingsView: View {
                 SettingsGPTAccountCard()
                 SettingsBridgeVersionCard()
                 runtimeDefaultsSection
+                SettingsV2WorkspaceCard()
+                SettingsV2TestingCard()
                 SettingsAboutCard()
                 SettingsUsageCard()
-                connectionSection
+                legacyConnectionSection
             }
             .padding()
         }
@@ -128,8 +130,16 @@ struct SettingsView: View {
 
     // MARK: - Connection
 
-    @ViewBuilder private var connectionSection: some View {
-        SettingsCard(title: "Connection") {
+    @ViewBuilder private var legacyConnectionSection: some View {
+        SettingsCard(title: "Connection Method 1") {
+            Text("Current shipping path. Uses the Remodex bridge on your Mac with saved relay pairing and QR/manual pairing.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            Text("Method 1 stays separate from Method 2. Its saved pairing does not automatically carry over to the V2 beta flow.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
             if let trustedPairPresentation = codex.trustedPairPresentation {
                 SettingsTrustedMacCard(
                     presentation: trustedPairPresentation,
@@ -558,7 +568,11 @@ private struct SettingsGPTAccountCard: View {
     @State private var isShowingMacLoginInfo = false
 
     var body: some View {
-        SettingsCard(title: "ChatGPT voice mode") {
+        SettingsCard(title: "Voice mode") {
+            Text("Supports the ChatGPT session on your Mac and OpenAI-compatible API mode, including Sub2API.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
             Button {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
                 isShowingMacLoginInfo = true
@@ -595,6 +609,10 @@ private struct SettingsBridgeVersionCard: View {
 
     var body: some View {
         SettingsCard(title: "Bridge Version") {
+            Text("Bridge Version shows the Remodex bridge package running on your paired Mac, not the iPhone app version.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
             HStack(spacing: 10) {
                 Text("Status")
                 Spacer()
@@ -760,7 +778,7 @@ private struct SettingsArchivedChatsCard: View {
 }
 
 private struct SettingsAboutCard: View {
-    @State private var isShowingAbout = false
+    @State private var activeGuide: RemodexConnectionGuideMode?
 
     var body: some View {
         SettingsCard(title: "About") {
@@ -770,10 +788,10 @@ private struct SettingsAboutCard: View {
 
             Button {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                isShowingAbout = true
+                activeGuide = .legacy
             } label: {
                 settingsAccessoryRow(
-                    title: "How Remodex Works",
+                    title: "How To Connect - Method 1",
                     leading: {
                         Image(systemName: "info.circle")
                             .font(AppFont.subheadline(weight: .medium))
@@ -784,53 +802,20 @@ private struct SettingsAboutCard: View {
 
             Button {
                 HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                if let url = URL(string: "https://x.com/emanueledpt") {
-                    UIApplication.shared.open(url)
-                }
+                activeGuide = .v2
             } label: {
                 settingsAccessoryRow(
-                    title: "Chat & Support",
+                    title: "How To Connect - Method 2",
                     leading: {
-                        Image("x-icon")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
-                    }
-                )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                UIApplication.shared.open(AppEnvironment.privacyPolicyURL)
-            } label: {
-                settingsAccessoryRow(
-                    title: "Privacy Policy",
-                    leading: {
-                        Image(systemName: "hand.raised")
-                            .font(AppFont.subheadline(weight: .medium))
-                    }
-                )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                UIApplication.shared.open(AppEnvironment.termsOfUseURL)
-            } label: {
-                settingsAccessoryRow(
-                    title: "Terms of Use",
-                    leading: {
-                        Image(systemName: "doc.text")
+                        Image(systemName: "arrow.triangle.branch")
                             .font(AppFont.subheadline(weight: .medium))
                     }
                 )
             }
             .buttonStyle(.plain)
         }
-        .fullScreenCover(isPresented: $isShowingAbout) {
-            AboutRemodexView()
+        .fullScreenCover(item: $activeGuide) { guide in
+            AboutRemodexView(mode: guide)
         }
     }
 
@@ -855,6 +840,91 @@ private struct SettingsAboutCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
+    }
+}
+
+private struct SettingsV2WorkspaceCard: View {
+    @Environment(CodexV2PreviewClient.self) private var codexV2
+    @State private var isShowingV2Workspace = false
+
+    var body: some View {
+        SettingsCard(title: "Connection Method 2") {
+            Text("Separate beta path. Uses `codexd` and the V2 relay instead of the legacy bridge.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            Text("Method 2 is not wire-compatible with Method 1. Treat it as a separate connection flow and a separate workspace entry.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            HStack(spacing: 8) {
+                SettingsStatusPill(label: codexV2.isConnected ? "Connected" : (codexV2.isConnecting ? "Connecting" : "Disconnected"))
+                SettingsStatusPill(label: "V2")
+                if let runtimeMode = codexV2.daemonHealth?.runtimeMode,
+                   !runtimeMode.isEmpty {
+                    SettingsStatusPill(label: runtimeMode)
+                }
+            }
+
+            if let workspaceRoot = codexV2.daemonHealth?.workspaceRoot,
+               !workspaceRoot.isEmpty {
+                Text(workspaceRoot)
+                    .font(AppFont.mono(.caption))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } else {
+                Text("Open Method 2 to connect, refresh chats, and validate the new stack.")
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
+
+            SettingsButton("Open Method 2 (V2 beta)") {
+                HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                isShowingV2Workspace = true
+            }
+        }
+        .fullScreenCover(isPresented: $isShowingV2Workspace) {
+            NavigationStack {
+                CodexV2WorkspaceView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                isShowingV2Workspace = false
+                            }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+private struct SettingsV2TestingCard: View {
+    @Environment(CodexV2PreviewClient.self) private var codexV2
+    @State private var isShowingV2Preview = false
+
+    var body: some View {
+        SettingsCard(title: "Method 2 Tools") {
+            Text("These tools are for validating and troubleshooting Method 2. They are intentionally separate from the user-facing workspace entry.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                SettingsStatusPill(label: codexV2.isConnected ? "V2 live" : "V2 idle")
+                if !codexV2.timeline.threadSummaries.isEmpty {
+                    SettingsStatusPill(label: "\(codexV2.timeline.threadSummaries.count) chats")
+                }
+            }
+
+            SettingsButton("Open Method 2 Debug") {
+                HapticFeedback.shared.triggerImpactFeedback(style: .light)
+                isShowingV2Preview = true
+            }
+        }
+        .fullScreenCover(isPresented: $isShowingV2Preview) {
+            CodexV2DebugView()
+        }
     }
 }
 

@@ -22,6 +22,7 @@ enum CodexGPTAccountStatus: String, Codable, Sendable {
 
 enum CodexGPTAuthMethod: String, Codable, Sendable {
     case chatgpt
+    case apiKey
 }
 
 struct CodexGPTAccountSnapshot: Codable, Equatable, Sendable {
@@ -275,7 +276,7 @@ extension CodexService {
         gptAccountErrorMessage = nil
     }
 
-    // Logs the Mac-owned ChatGPT session out without touching pairing or reconnect state.
+    // Logs the Mac-owned auth session out without touching pairing or reconnect state.
     func logoutGPTAccount() async {
         if isConnected {
             _ = try? await sendRequest(method: "account/logout", params: nil)
@@ -300,7 +301,7 @@ extension CodexService {
                 retaining: gptAccountSnapshot
             )
         )
-        gptAccountErrorMessage = "ChatGPT voice needs a fresh sign-in on your Mac."
+        gptAccountErrorMessage = "Voice mode needs refreshed authentication on your Mac."
     }
 
     // Stores an incoming deep-link callback and completes the pending login when the bridge is reachable.
@@ -1078,6 +1079,8 @@ extension CodexService {
         switch value {
         case "chatgpt", "chat_gpt", "chatgptauthtokens":
             return .chatgpt
+        case "apikey", "api_key", "api-key":
+            return .apiKey
         default:
             return nil
         }

@@ -1,5 +1,5 @@
 // FILE: CodexService+Voice.swift
-// Purpose: Resolves a ChatGPT token from the bridge and transcribes voice clips directly from the phone.
+// Purpose: Sends recorded voice clips to the bridge so transcription stays on the Mac-side auth/provider context.
 // Layer: Service
 // Exports: CodexVoiceTranscriptionPreflight, CodexService voice helpers
 // Depends on: Foundation, RPCMessage, JSONValue
@@ -33,8 +33,8 @@ struct CodexVoiceTranscriptionPreflight: Equatable, Sendable {
 }
 
 extension CodexService {
-    // Transcribes a local WAV clip by resolving a ChatGPT token from the bridge,
-    // then calling the ChatGPT transcription API directly from the phone.
+    // Sends the local WAV clip through the bridge so the Mac-side ChatGPT/API auth
+    // context stays private and provider-specific routing happens on the bridge.
     func transcribeVoiceAudioFile(at url: URL, durationSeconds: TimeInterval) async throws -> String {
         guard isConnected else {
             throw CodexServiceError.disconnected
@@ -47,39 +47,29 @@ extension CodexService {
         )
         try preflight.validate()
 
-        let token: String
-        do {
-            token = try await resolveVoiceAuthToken()
-        } catch {
-            Task { await refreshGPTAccountState() }
-            throw error
-        }
-
-        do {
-            return try await GPTVoiceTranscriptionManager.transcribe(wavData: audioData, token: token)
-        } catch GPTVoiceTranscriptionError.authExpired {
-            Task { await refreshGPTAccountState() }
-            let freshToken = try await resolveVoiceAuthToken()
-            return try await GPTVoiceTranscriptionManager.transcribe(wavData: audioData, token: freshToken)
-        }
-    }
-
-    // Asks the bridge for an ephemeral ChatGPT token over the E2E encrypted channel.
-    private func resolveVoiceAuthToken() async throws -> String {
         let response: RPCMessage
         do {
-            response = try await sendRequest(method: "voice/resolveAuth", params: nil)
+            response = try await sendRequest(
+                method: "voice/transcribe",
+                params: .object([
+                    "mimeType": .string("audio/wav"),
+                    "audioBase64": .string(audioData.base64EncodedString()),
+                    "sampleRateHz": .integer(24_000),
+                    "durationMs": .integer(Int((durationSeconds * 1_000).rounded())),
+                ])
+            )
         } catch {
             _ = consumeUnsupportedVoiceBridgeAuth(error)
+            Task { await refreshGPTAccountState() }
             throw error
         }
 
         guard let payload = response.result?.objectValue,
-              let token = payload["token"]?.stringValue,
-              !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw CodexServiceError.invalidResponse("voice/resolveAuth did not return a valid token")
+              let text = payload["text"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            throw CodexServiceError.invalidResponse("voice/transcribe did not return any text")
         }
 
-        return token
+        return text
     }
 }
