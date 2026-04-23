@@ -196,7 +196,7 @@ struct TurnDiffSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("\(chunks.count) file\(chunks.count == 1 ? "" : "s") changed")
+                        Text(L10n.format(chunks.count == 1 ? "%d file changed" : "%d files changed", chunks.count))
                             .font(AppFont.mono(.subheadline))
                             .foregroundStyle(.secondary)
 
@@ -211,7 +211,7 @@ struct TurnDiffSheet: View {
                                 }
                             }
                         } label: {
-                            Text(allExpanded ? "Collapse All" : "Expand All")
+                            Text(allExpanded ? L10n.string("Collapse All") : L10n.string("Expand All"))
                                 .font(AppFont.mono(.caption))
                                 .foregroundStyle(.blue)
                         }

@@ -86,7 +86,7 @@ struct AssistantRevertSheet: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     if canConfirm {
-                        Button(state.isApplying ? "Undoing..." : "Undo") {
+                        Button(state.isApplying ? L10n.string("Undoing...") : L10n.string("Undo")) {
                             onConfirm()
                         }
                         .disabled(state.isApplying)
@@ -104,7 +104,7 @@ struct AssistantRevertSheet: View {
                 .foregroundStyle(.primary)
 
             HStack(spacing: 8) {
-                Text("\(affectedFiles.count) file\(affectedFiles.count == 1 ? "" : "s")")
+                Text(L10n.format(affectedFiles.count == 1 ? "%d file" : "%d files", affectedFiles.count))
                     .font(AppFont.mono(.caption))
                     .foregroundStyle(.secondary)
                 Text("+\(totalAdditions)")

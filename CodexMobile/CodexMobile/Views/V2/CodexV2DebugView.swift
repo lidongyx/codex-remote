@@ -78,7 +78,7 @@ struct CodexV2DebugView: View {
                 .lineLimit(2...5)
 
             if client.isConnected {
-                SettingsButton(client.isRunning ? "Stop Active Run" : "Send Prompt", isLoading: false) {
+                SettingsButton(client.isRunning ? L10n.string("Stop Active Run") : L10n.string("Send Prompt"), isLoading: false) {
                     Task { @MainActor in
                         if client.isRunning {
                             await client.interruptCurrentRun()
@@ -98,7 +98,7 @@ struct CodexV2DebugView: View {
                     client.disconnect()
                 }
             } else {
-                SettingsButton(client.isConnecting ? "Connecting..." : "Connect", isLoading: client.isConnecting) {
+                SettingsButton(client.isConnecting ? L10n.string("Connecting...") : L10n.string("Connect"), isLoading: client.isConnecting) {
                     Task { @MainActor in
                         await client.connect()
                     }

@@ -268,7 +268,7 @@ struct ProposedPlanResultCard: View {
                             Image(systemName: "arrow.right.circle.fill")
                                 .font(AppFont.system(size: 14, weight: .semibold))
                         }
-                        Text(isImplementationLocked ? "Starting implementation…" : "Implement plan")
+                        Text(isImplementationLocked ? L10n.string("Starting implementation…") : L10n.string("Implement plan"))
                             .font(AppFont.subheadline(weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
@@ -431,7 +431,11 @@ struct StructuredUserInputAccessory: View {
             PlanModeCardContainer(title: "Input needed", showsProgress: false) {
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(questionCount == 1 ? "Codex needs one answer" : "Codex needs \(questionCount) answers")
+                        Text(
+                            questionCount == 1
+                                ? L10n.string("Codex needs one answer")
+                                : L10n.format("Codex needs %d answers", questionCount)
+                        )
                             .font(AppFont.subheadline(weight: .medium))
                             .foregroundStyle(.primary)
 

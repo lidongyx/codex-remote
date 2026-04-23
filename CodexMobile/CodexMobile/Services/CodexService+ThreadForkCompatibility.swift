@@ -57,8 +57,8 @@ extension CodexService {
 private extension CodexService {
     var threadForkBridgeUpdatePrompt: CodexBridgeUpdatePrompt {
         CodexBridgeUpdatePrompt(
-            title: "Update Remodex on your Mac to use /fork",
-            message: "This Mac bridge does not support native conversation forks yet. Update the Remodex npm package to use /fork and worktree fork flows.",
+            title: L10n.string("Update Remodex on your Mac to use /fork"),
+            message: L10n.string("This Mac bridge does not support native conversation forks yet. Update the Remodex npm package to use /fork and worktree fork flows."),
             command: "npm install -g remodex@latest"
         )
     }

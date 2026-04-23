@@ -342,7 +342,7 @@ struct StructuredUserInputCardView: View {
                         .controlSize(.small)
                         .tint(Color.white)
                 }
-                Text(isSubmitting ? "Sending..." : "Send")
+                Text(isSubmitting ? L10n.string("Sending...") : L10n.string("Send"))
                     .font(AppFont.subheadline(weight: .medium))
             }
             .padding(.horizontal, 20)

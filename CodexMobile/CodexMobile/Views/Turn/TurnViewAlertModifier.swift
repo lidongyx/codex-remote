@@ -76,7 +76,7 @@ private struct TurnViewAlertModifier: ViewModifier {
                     macHandoffErrorMessage = nil
                 }
             } message: {
-                Text(macHandoffErrorMessage ?? "Could not continue this chat on your Mac.")
+                Text(macHandoffErrorMessage ?? L10n.string("Could not continue this chat on your Mac."))
             }
     }
 

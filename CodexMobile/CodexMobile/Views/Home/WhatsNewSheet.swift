@@ -74,7 +74,7 @@ struct WhatsNewSheet: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
 
-                    Text(.init(item))
+                    Text(L10n.string(item))
                         .font(AppFont.body())
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)

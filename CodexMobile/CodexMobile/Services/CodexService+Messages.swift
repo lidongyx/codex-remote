@@ -3381,21 +3381,21 @@ extension CodexService {
     func streamingPlaceholderText(for kind: CodexMessageKind) -> String {
         switch kind {
         case .thinking:
-            return "Thinking..."
+            return L10n.string("Thinking...")
         case .toolActivity:
-            return "Working…"
+            return L10n.string("Working…")
         case .fileChange:
-            return "Applying file changes..."
+            return L10n.string("Applying file changes...")
         case .commandExecution:
-            return "Running command"
+            return L10n.string("Running command")
         case .subagentAction:
-            return "Coordinating agents..."
+            return L10n.string("Coordinating agents...")
         case .plan:
-            return "Planning..."
+            return L10n.string("Planning...")
         case .userInputPrompt:
-            return "Waiting for input..."
+            return L10n.string("Waiting for input...")
         case .chat:
-            return "Updating..."
+            return L10n.string("Updating...")
         }
     }
 

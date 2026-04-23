@@ -387,7 +387,7 @@ private struct SettingsUsageCard: View {
                 isLoadingRateLimits: codex.isLoadingRateLimits,
                 rateLimitsErrorMessage: codex.rateLimitsErrorMessage,
                 refreshControl: UsageStatusRefreshControl(
-                    title: "Refresh",
+                    title: L10n.string("Refresh"),
                     isRefreshing: isRefreshing,
                     action: refreshStatus
                 )
@@ -554,12 +554,12 @@ private struct SettingsNotificationsCard: View {
 
     private var statusLabel: String {
         switch codex.notificationAuthorizationStatus {
-        case .authorized: "Authorized"
-        case .denied: "Denied"
-        case .provisional: "Provisional"
-        case .ephemeral: "Ephemeral"
-        case .notDetermined: "Not requested"
-        @unknown default: "Unknown"
+        case .authorized: L10n.string("Authorized")
+        case .denied: L10n.string("Denied")
+        case .provisional: L10n.string("Provisional")
+        case .ephemeral: L10n.string("Ephemeral")
+        case .notDetermined: L10n.string("Not requested")
+        @unknown default: L10n.string("Unknown")
         }
     }
 }
@@ -913,7 +913,7 @@ private struct SettingsV2TestingCard: View {
             HStack(spacing: 8) {
                 SettingsStatusPill(label: codexV2.isConnected ? "V2 live" : "V2 idle")
                 if !codexV2.timeline.threadSummaries.isEmpty {
-                    SettingsStatusPill(label: "\(codexV2.timeline.threadSummaries.count) chats")
+                    SettingsStatusPill(label: L10n.format("%d chats", codexV2.timeline.threadSummaries.count))
                 }
             }
 
@@ -1012,7 +1012,7 @@ private struct SettingsTrustedMacCard: View {
     @ViewBuilder
     private func labeledRow(_ label: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label)
+            Text(L10n.string(label))
                 .font(AppFont.caption(weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 48, alignment: .leading)
@@ -1030,7 +1030,7 @@ private struct SettingsStatusPill: View {
     let label: String
 
     var body: some View {
-        Text(label)
+        Text(L10n.string(label))
             .font(AppFont.caption(weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)

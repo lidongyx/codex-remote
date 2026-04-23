@@ -256,7 +256,7 @@ final class ContentViewModel {
                 )
                 codex.connectionRecoveryState = .retrying(
                     attempt: max(1, attempt + 1),
-                    message: "Reconnecting..."
+                    message: L10n.string("Reconnecting...")
                 )
                 try await connect(codex: codex, serverURL: fullURL)
                 codex.debugRuntimeLog(
@@ -412,7 +412,7 @@ extension ContentViewModel {
             if attemptIndex > 0 {
                 codex.connectionRecoveryState = .retrying(
                     attempt: attemptIndex,
-                    message: "Connection timed out. Retrying..."
+                    message: L10n.string("Connection timed out. Retrying...")
                 )
             }
 

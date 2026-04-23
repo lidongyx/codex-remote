@@ -772,29 +772,29 @@ extension CodexService {
         if let nwError = error as? NWError {
             switch nwError {
             case .posix(let code) where code == .ECONNREFUSED:
-                return "Connection refused by relay server at \(attemptedURL)."
+                return L10n.format("Connection refused by relay server at %@.", attemptedURL)
             case .posix(let code) where code == .EMSGSIZE:
                 return oversizedRelayPayloadMessage
             case .posix(let code) where code == .ENETDOWN || code == .ENETUNREACH || code == .EHOSTUNREACH:
-                return "Cannot reach relay server at \(attemptedURL). Check that the iPhone can access the Mac on the local network."
+                return L10n.format("Cannot reach relay server at %@. Check that the iPhone can access the Mac on the local network.", attemptedURL)
             case .posix(let code) where code == .ETIMEDOUT:
-                return "Connection timed out. Check server/network."
+                return L10n.string("Connection timed out. Check server/network.")
             case .dns(let code):
-                return "Cannot resolve server host (\(code)). Check the relay URL."
+                return L10n.format("Cannot resolve server host (%@). Check the relay URL.", "\(code)")
             default:
                 break
             }
         }
 
         if isRecoverableTransientConnectionError(error) {
-            return "Connection timed out. Check server/network."
+            return L10n.string("Connection timed out. Check server/network.")
         }
 
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain,
            nsError.code == NSURLErrorNotConnectedToInternet,
            requiresLocalNetworkAuthorization(for: URL(string: attemptedURL) ?? URL(fileURLWithPath: "/")) {
-            return "Remodex cannot open the local relay connection on this iPhone. Check Local Network and the app's Wi-Fi/Cellular access in Settings, then retry."
+            return L10n.string("Remodex cannot open the local relay connection on this iPhone. Check Local Network and the app's Wi-Fi/Cellular access in Settings, then retry.")
         }
 
         return error.localizedDescription
@@ -911,12 +911,12 @@ extension CodexService {
 
     func recoveryStatusMessage(for error: Error) -> String {
         if isRetryableSavedSessionConnectError(error) {
-            return "Reconnecting..."
+            return L10n.string("Reconnecting...")
         }
         if isRecoverableTransientConnectionError(error) {
-            return "Connection timed out. Retrying..."
+            return L10n.string("Connection timed out. Retrying...")
         }
-        return "Reconnecting..."
+        return L10n.string("Reconnecting...")
     }
 
     func userFacingConnectFailureMessage(_ error: Error) -> String {
@@ -927,10 +927,10 @@ extension CodexService {
             return oversizedRelayPayloadMessage
         }
         if shouldTreatSendFailureAsDisconnect(error) || isBenignBackgroundDisconnect(error) {
-            return "Connection was interrupted. Tap Reconnect to try again."
+            return L10n.string("Connection was interrupted. Tap Reconnect to try again.")
         }
         if isRecoverableTransientConnectionError(error) {
-            return "Connection timed out. Check server/network."
+            return L10n.string("Connection timed out. Check server/network.")
         }
         return error.localizedDescription
     }
@@ -949,7 +949,7 @@ extension CodexService {
     }
 
     var oversizedRelayPayloadMessage: String {
-        "A thread payload was too large for the relay connection. This can happen while reopening image-heavy chats even if you didn't press Send."
+        L10n.string("A thread payload was too large for the relay connection. This can happen while reopening image-heavy chats even if you didn't press Send.")
     }
 
     // Treats `.inactive` app switches like background for user-facing reconnect noise.
@@ -1000,11 +1000,11 @@ extension CodexService {
 
         switch rawValue {
         case 4001:
-            return "This relay session was replaced by another Mac connection. Scan a new QR code to reconnect."
+            return L10n.string("This relay session was replaced by another Mac connection. Scan a new QR code to reconnect.")
         case 4003:
-            return "This device was replaced by a newer connection. Scan a new QR code to reconnect."
+            return L10n.string("This device was replaced by a newer connection. Scan a new QR code to reconnect.")
         default:
-            return "This relay pairing is no longer valid. Scan a new QR code to reconnect."
+            return L10n.string("This relay pairing is no longer valid. Scan a new QR code to reconnect.")
         }
     }
 
@@ -1014,7 +1014,7 @@ extension CodexService {
             return nil
         }
 
-        return "Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code."
+        return L10n.string("Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code.")
     }
 
     func retryableSessionUnavailableMessage(forConnectError error: Error) -> String? {
@@ -1022,7 +1022,7 @@ extension CodexService {
             return nil
         }
 
-        return "Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code."
+        return L10n.string("Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code.")
     }
 
     // Surfaces relay-enforced drops that keep the pairing valid but lost the current send.
@@ -1032,7 +1032,7 @@ extension CodexService {
             return nil
         }
 
-        return "The Mac was temporarily unavailable and this message could not be delivered. Wait a moment, then try again."
+        return L10n.string("The Mac was temporarily unavailable and this message could not be delivered. Wait a moment, then try again.")
     }
 
     func shouldClearSavedRelaySession(for closeCode: NWProtocolWebSocket.CloseCode?) -> Bool {

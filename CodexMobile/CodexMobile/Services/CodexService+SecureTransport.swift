@@ -448,7 +448,7 @@ private extension CodexService {
     // Centralizes the bridge-update guidance so every mismatch shows the same Mac command.
     func presentBridgeUpdatePrompt(message: String) {
         bridgeUpdatePrompt = CodexBridgeUpdatePrompt(
-            title: "Update the Remodex package on your Mac",
+            title: L10n.string("Update the Remodex package on your Mac"),
             message: message,
             command: "npm install -g remodex@latest"
         )

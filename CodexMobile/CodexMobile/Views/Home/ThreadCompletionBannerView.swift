@@ -57,7 +57,7 @@ struct ThreadCompletionBannerView: View {
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture(perform: onTap)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(banner.title). Answer ready in another chat.")
-        .accessibilityHint("Opens the completed chat.")
+        .accessibilityLabel("\(banner.title). \(L10n.string("Answer ready in another chat."))")
+        .accessibilityHint(L10n.string("Opens the completed chat."))
     }
 }

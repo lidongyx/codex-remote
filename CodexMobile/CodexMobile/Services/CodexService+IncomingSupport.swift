@@ -119,15 +119,15 @@ func normalizedToolActivityStatus(_ rawStatus: String?, isCompleted: Bool) -> St
 
     switch normalized {
     case "failed", "error":
-        return "Failed"
+        return L10n.string("Failed")
     case "stopped", "cancelled", "canceled", "interrupted":
-        return "Stopped"
+        return L10n.string("Stopped")
     case "completed", "complete", "done", "finished", "success", "succeeded":
-        return "Completed"
+        return L10n.string("Completed")
     case "running", "inprogress", "working":
-        return "Running"
+        return L10n.string("Running")
     default:
-        return isCompleted ? "Completed" : "Running"
+        return isCompleted ? L10n.string("Completed") : L10n.string("Running")
     }
 }
 

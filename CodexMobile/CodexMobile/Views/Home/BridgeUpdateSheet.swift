@@ -56,7 +56,7 @@ struct BridgeUpdateSheet: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: didCopyCommand ? "checkmark" : "doc.on.doc")
                                         .font(.system(size: 13, weight: .semibold))
-                                    Text(didCopyCommand ? "Copied" : "Copy")
+                                    Text(didCopyCommand ? L10n.string("Copied") : L10n.string("Copy"))
                                         .font(AppFont.caption(weight: .semibold))
                                 }
                                 .padding(.horizontal, 12)
@@ -94,7 +94,8 @@ struct BridgeUpdateSheet: View {
                                 ProgressView()
                                     .tint(.white)
                             }
-                            Text(isRetrying ? "Reconnecting..." : "I Updated It")
+                            Text(isRetrying ? L10n.string("Reconnecting...") : L10n.string("I Updated It"))
+                                .contentTransition(.opacity)
                                 .font(AppFont.body(weight: .semibold))
                         }
                         .frame(maxWidth: .infinity)

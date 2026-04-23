@@ -123,14 +123,18 @@ struct UsageStatusSummaryContent: View {
             if let contextWindowUsage {
                 metricRow(
                     label: "Context",
-                    value: "\(contextWindowUsage.percentRemaining)% left",
-                    detail: "(\(compactTokenCount(contextWindowUsage.tokensUsed)) used / \(compactTokenCount(contextWindowUsage.tokenLimit)))",
+                    value: L10n.format("%d%% left", contextWindowUsage.percentRemaining),
+                    detail: "(\(L10n.format("%@ used / %@", compactTokenCount(contextWindowUsage.tokensUsed), compactTokenCount(contextWindowUsage.tokenLimit))))",
                     monospace: true
                 )
 
                 progressBar(progress: contextWindowUsage.fractionUsed)
             } else {
-                metricRow(label: "Context", value: "Unavailable", detail: "Waiting for token usage")
+                metricRow(
+                    label: "Context",
+                    value: L10n.string("Unavailable"),
+                    detail: L10n.string("Waiting for token usage")
+                )
             }
         }
     }
@@ -152,7 +156,7 @@ struct UsageStatusSummaryContent: View {
                         .font(AppFont.system(size: 12, weight: .semibold))
                 }
 
-                Text(refreshControl.isRefreshing ? "Refreshing..." : refreshControl.title)
+                Text(refreshControl.isRefreshing ? L10n.string("Refreshing...") : refreshControl.title)
                     .font(AppFont.subheadline(weight: .semibold))
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -170,7 +174,7 @@ struct UsageStatusSummaryContent: View {
 
                 Spacer(minLength: 12)
 
-                Text("\(row.window.remainingPercent)% left")
+                Text(L10n.format("%d%% left", row.window.remainingPercent))
                     .font(AppFont.mono(.callout))
                     .foregroundStyle(.primary)
 
@@ -192,7 +196,7 @@ struct UsageStatusSummaryContent: View {
         monospace: Bool = false
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("\(label):")
+            Text(L10n.string(label) + ":")
                 .font(AppFont.mono(.callout))
                 .foregroundStyle(.secondary)
 

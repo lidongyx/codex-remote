@@ -37,7 +37,7 @@ struct SidebarThreadListView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
 
                 if threads.isEmpty && !isFiltering {
-                    Text(isConnected ? "No conversations" : "Connect to view conversations")
+                    Text(isConnected ? L10n.string("No conversations") : L10n.string("Connect to view conversations"))
                         .foregroundStyle(.secondary)
                         .font(AppFont.subheadline())
                         .padding(.horizontal, 16)
@@ -145,7 +145,7 @@ struct SidebarThreadListView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Text(hiddenCount > 0 ? "Show \(hiddenCount) more" : "Show more")
+                    Text(hiddenCount > 0 ? L10n.format("Show %d more", hiddenCount) : L10n.string("Show more"))
                     Image(systemName: "chevron.down")
                         .font(AppFont.system(size: 10, weight: .semibold))
                         .rotationEffect(.degrees(showMoreChevronRotated ? 180 : 0))

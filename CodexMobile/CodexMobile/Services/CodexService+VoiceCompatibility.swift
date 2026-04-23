@@ -109,17 +109,17 @@ extension CodexService {
         switch error {
         case .invalidConfiguration:
             return .providerSpecific(
-                summary: "百炼实时听写配置无效。",
+                summary: L10n.string("Bailian realtime dictation configuration is invalid."),
                 detail: error.localizedDescription
             )
         case .authenticationFailed:
             return .providerSpecific(
-                summary: "百炼实时听写鉴权失败。",
+                summary: L10n.string("Bailian realtime dictation authentication failed."),
                 detail: error.localizedDescription
             )
         case .serverRejected:
             return .providerSpecific(
-                summary: "百炼实时听写拒绝了这次会话。",
+                summary: L10n.string("Bailian realtime dictation rejected this session."),
                 detail: error.localizedDescription
             )
         case .connectionFailed, .invalidServerResponse:
@@ -134,8 +134,8 @@ extension CodexService {
             return .reconnectRequired
         case "realtime_config_missing":
             return .providerSpecific(
-                summary: "请先在 Mac 上配置百炼实时听写。",
-                detail: "先在本地 bridge 环境里设置 `DASHSCOPE_API_KEY`，然后重新连接后再试。"
+                summary: L10n.string("Set up Bailian realtime on your Mac to use voice mode."),
+                detail: L10n.string("Configure `DASHSCOPE_API_KEY` on the paired Mac bridge, then come back here and try again.")
             )
         default:
             return nil
@@ -150,7 +150,7 @@ extension CodexService {
     private func classifyVoiceFailureMessage(_ message: String) -> CodexVoiceFailureReason {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return .generic("Voice transcription failed.")
+            return .generic(L10n.string("Voice transcription failed."))
         }
 
         let normalized = trimmed.lowercased()
@@ -178,7 +178,7 @@ extension CodexService {
             || normalized.contains("bailian realtime")
             || normalized.contains("百炼") {
             return .providerSpecific(
-                summary: "请先在 Mac 上配置百炼实时听写。",
+                summary: L10n.string("Set up Bailian realtime on your Mac to use voice mode."),
                 detail: trimmed
             )
         }

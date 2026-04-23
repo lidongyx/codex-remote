@@ -2,9 +2,10 @@
 // Purpose: AVFoundation pairing screen dedicated to camera-based QR scans.
 // Layer: View
 // Exports: QRScannerView
-// Depends on: SwiftUI, AVFoundation
+// Depends on: SwiftUI, AVFoundation, PhotosUI
 
 import AVFoundation
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -17,6 +18,9 @@ struct QRScannerView: View {
     @State private var didCopyBridgeUpdateCommand = false
     @State private var hasCameraPermission = false
     @State private var isCheckingPermission = true
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoImportID = UUID()
+    @State private var isImportingPhoto = false
 
     init(
         initialBridgeUpdatePrompt: CodexBridgeUpdatePrompt? = nil,
@@ -52,6 +56,15 @@ struct QRScannerView: View {
                 cameraPermissionView
             }
 
+            if isImportingPhoto {
+                Color.black.opacity(0.42)
+                    .ignoresSafeArea()
+
+                ProgressView("Reading Photo…")
+                    .tint(.white)
+                    .foregroundStyle(.white)
+            }
+
         }
         .safeAreaInset(edge: .top) {
             if let onBack {
@@ -63,6 +76,12 @@ struct QRScannerView: View {
                 .padding(.top, 8)
             }
         }
+        .task(id: selectedPhotoImportID) {
+            guard let selectedPhotoItem else {
+                return
+            }
+            await handleImportedPhoto(selectedPhotoItem)
+        }
         .task {
             await checkCameraPermission()
         }
@@ -72,7 +91,7 @@ struct QRScannerView: View {
         )) {
             Button("OK", role: .cancel) { scannerError = nil }
         } message: {
-            Text(scannerError ?? "Invalid QR code")
+            Text(scannerError ?? L10n.string("Invalid QR code"))
         }
     }
 
@@ -158,7 +177,7 @@ struct QRScannerView: View {
                     )
 
                 if showsCopyButton {
-                    Button(didCopyBridgeUpdateCommand ? "Copied" : "Copy Command") {
+                    Button(didCopyBridgeUpdateCommand ? L10n.string("Copied") : L10n.string("Copy Command")) {
                         UIPasteboard.general.string = detail
                         HapticFeedback.shared.triggerImpactFeedback(style: .light)
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -207,6 +226,8 @@ struct QRScannerView: View {
                 .font(AppFont.subheadline(weight: .medium))
                 .foregroundStyle(.white)
 
+            photoPickerButton
+
             Spacer()
         }
     }
@@ -233,7 +254,44 @@ struct QRScannerView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+
+            photoPickerButton
         }
+    }
+
+    private var photoPickerButton: some View {
+        PhotosPicker(
+            selection: selectedPhotoItemBinding,
+            matching: .images,
+            photoLibrary: .shared()
+        ) {
+            HStack(spacing: 8) {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(isImportingPhoto ? "Reading Photo…" : "Choose QR from Photos")
+                    .font(AppFont.subheadline(weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.12), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.16), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isImportingPhoto)
+    }
+
+    private var selectedPhotoItemBinding: Binding<PhotosPickerItem?> {
+        Binding(
+            get: { selectedPhotoItem },
+            set: { newValue in
+                selectedPhotoItem = newValue
+                selectedPhotoImportID = UUID()
+            }
+        )
     }
 
     // Keeps permission-prompt teardown on the main actor so backing out mid-prompt
@@ -260,19 +318,55 @@ struct QRScannerView: View {
     }
 
     private func handleScanResult(_ code: String, resetScanLock: @escaping () -> Void) {
-        switch validatePairingQRCode(code) {
+        handlePairingValidationResult(validatePairingQRCode(code), resetScanLock: resetScanLock)
+    }
+
+    @MainActor
+    private func handleImportedPhoto(_ item: PhotosPickerItem) async {
+        guard !isImportingPhoto else {
+            return
+        }
+
+        isImportingPhoto = true
+        defer {
+            isImportingPhoto = false
+            selectedPhotoItem = nil
+        }
+
+        do {
+            guard let imageData = try await item.loadTransferable(type: Data.self),
+                  !imageData.isEmpty else {
+                scannerError = "That photo could not be read. Choose a clearer image of the Remodex QR code."
+                return
+            }
+
+            let code = try QRScannerPhotoCodeReader.firstQRCode(in: imageData)
+            HapticFeedback.shared.triggerImpactFeedback(style: .heavy)
+            handlePairingValidationResult(validatePairingQRCode(code))
+        } catch let error as QRScannerPhotoDecodeError {
+            scannerError = error.localizedDescription
+        } catch {
+            scannerError = "That photo could not be read. Choose a clearer image of the Remodex QR code."
+        }
+    }
+
+    private func handlePairingValidationResult(
+        _ result: QRScannerPairingValidationResult,
+        resetScanLock: (() -> Void)? = nil
+    ) {
+        switch result {
         case .success(let payload):
             onScan(payload)
         case .shortCode:
             scannerError = "Use Pair with Code from the previous screen."
-            resetScanLock()
+            resetScanLock?()
         case .scanError(let message):
             scannerError = message
-            resetScanLock()
+            resetScanLock?()
         case .bridgeUpdateRequired(let prompt):
             didCopyBridgeUpdateCommand = false
             bridgeUpdatePrompt = prompt
-            resetScanLock()
+            resetScanLock?()
         }
     }
 }

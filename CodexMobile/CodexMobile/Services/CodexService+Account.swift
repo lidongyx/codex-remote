@@ -57,17 +57,17 @@ struct CodexGPTAccountSnapshot: Codable, Equatable, Sendable {
     var statusLabel: String {
         switch status {
         case .unknown:
-            return "Unknown"
+            return L10n.string("Unknown")
         case .unavailable:
-            return "Unavailable"
+            return L10n.string("Unavailable")
         case .notLoggedIn:
-            return "Not logged in"
+            return L10n.string("Not logged in")
         case .loginPending:
-            return "Login pending"
+            return L10n.string("Login pending")
         case .authenticated:
-            return needsReauth ? "Needs reauth" : "Authenticated"
+            return needsReauth ? L10n.string("Needs reauth") : L10n.string("Authenticated")
         case .expired:
-            return "Expired"
+            return L10n.string("Expired")
         }
     }
 
@@ -83,7 +83,7 @@ struct CodexGPTAccountSnapshot: Codable, Equatable, Sendable {
             parts.append(Self.expiryFormatter.string(from: expiresAt))
         }
         if isAuthenticated && !isVoiceTokenReady {
-            parts.append("Voice syncing")
+            parts.append(L10n.string("Voice syncing"))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -751,15 +751,20 @@ extension CodexService {
         let message: String
         if let currentVersion = currentVersion?.trimmingCharacters(in: .whitespacesAndNewlines),
            !currentVersion.isEmpty {
-            message =
-                "This Mac bridge is running Remodex \(currentVersion), but this iPhone app requires Remodex \(CodexService.minimumSupportedBridgePackageVersion) or newer. Update the npm package on your Mac, then reconnect."
+            message = L10n.format(
+                "This Mac bridge is running Remodex %@, but this iPhone app requires Remodex %@ or newer. Update the npm package on your Mac, then reconnect.",
+                currentVersion,
+                CodexService.minimumSupportedBridgePackageVersion
+            )
         } else {
-            message =
-                "This Mac bridge is too old for this version of Remodex iPhone. Update the Remodex npm package on your Mac to \(CodexService.minimumSupportedBridgePackageVersion) or newer, then reconnect."
+            message = L10n.format(
+                "This Mac bridge is too old for this version of Remodex iPhone. Update the Remodex npm package on your Mac to %@ or newer, then reconnect.",
+                CodexService.minimumSupportedBridgePackageVersion
+            )
         }
 
         return CodexBridgeUpdatePrompt(
-            title: "Update Remodex on your Mac to reconnect",
+            title: L10n.string("Update Remodex on your Mac to reconnect"),
             message: message,
             command: minimumBridgePackageUpdateCommand
         )
@@ -820,16 +825,24 @@ extension CodexService {
         latestVersion: String
     ) -> CodexBridgeUpdatePrompt {
         CodexBridgeUpdatePrompt(
-            title: "A newer Remodex update is available on your Mac",
-            message: "This Mac bridge is running Remodex \(currentVersion), and npm now has Remodex \(latestVersion). Update the package on your Mac when you're ready, then reconnect to start using the newer build.",
+            title: L10n.string("A newer Remodex update is available on your Mac"),
+            message: L10n.format(
+                "This Mac bridge is running Remodex %@, and npm now has Remodex %@. Update the package on your Mac when you're ready, then reconnect to start using the newer build.",
+                currentVersion,
+                latestVersion
+            ),
             command: minimumBridgePackageUpdateCommand
         )
     }
 
     private func forcedBridgePackageUpdatePrompt(currentVersion: String) -> CodexBridgeUpdatePrompt {
         CodexBridgeUpdatePrompt(
-            title: "Update Remodex on your Mac to reconnect",
-            message: "This Mac bridge is running Remodex \(currentVersion). Update the Remodex CLI on your Mac to \(forcedBridgeUpgradeTargetVersion), then reconnect.",
+            title: L10n.string("Update Remodex on your Mac to reconnect"),
+            message: L10n.format(
+                "This Mac bridge is running Remodex %@. Update the Remodex CLI on your Mac to %@, then reconnect.",
+                currentVersion,
+                forcedBridgeUpgradeTargetVersion
+            ),
             command: forcedBridgeUpgradeCommand
         )
     }
