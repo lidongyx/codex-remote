@@ -531,6 +531,35 @@ final class CodexServiceIncomingRunIndicatorTests: XCTestCase {
         }
     }
 
+    func testIPhoneSocketReplacementKeepsSavedPairingAndRetriesReconnect() {
+        let service = makeService()
+
+        withSavedRelayPairing(sessionId: "session-\(UUID().uuidString)", relayURL: "wss://relay.test/relay") {
+            service.relaySessionId = SecureStore.readString(for: CodexSecureKeys.relaySessionId)
+            service.relayUrl = SecureStore.readString(for: CodexSecureKeys.relayUrl)
+            service.isConnected = true
+            service.isInitialized = true
+            service.lastErrorMessage = nil
+            service.setForegroundState(true)
+
+            service.handleReceiveError(
+                CodexServiceError.disconnected,
+                relayCloseCode: .privateCode(4003)
+            )
+
+            XCTAssertFalse(service.isConnected)
+            XCTAssertFalse(service.isInitialized)
+            XCTAssertTrue(service.shouldAutoReconnectOnForeground)
+            XCTAssertEqual(service.relaySessionId, SecureStore.readString(for: CodexSecureKeys.relaySessionId))
+            XCTAssertEqual(service.relayUrl, SecureStore.readString(for: CodexSecureKeys.relayUrl))
+            XCTAssertEqual(
+                service.lastErrorMessage,
+                "This connection was replaced while reconnecting. Remodex will try to restore your saved Mac."
+            )
+            XCTAssertEqual(service.connectionRecoveryState, .retrying(attempt: 0, message: "Reconnecting..."))
+        }
+    }
+
     func testMacUnavailableCloseKeepsSavedPairingAndRetriesReconnect() {
         let service = makeService()
 

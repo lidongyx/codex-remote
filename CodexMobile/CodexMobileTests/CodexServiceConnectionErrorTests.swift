@@ -157,6 +157,17 @@ final class CodexServiceConnectionErrorTests: XCTestCase {
         )
     }
 
+    func testConnectTimeIPhoneReplacementCloseIsRetryable() {
+        let service = CodexService()
+        let error = CodexServiceError.invalidInput("WebSocket closed during connect (4003)")
+
+        XCTAssertTrue(service.isRetryableSavedSessionConnectError(error))
+        XCTAssertEqual(
+            service.userFacingConnectFailureMessage(error),
+            "This connection was replaced while reconnecting. Remodex will try to restore your saved Mac."
+        )
+    }
+
     func testManualWebSocketClosePayloadPreservesRetryableRelayCode() {
         let service = CodexService()
         let closeCode = service.relayCloseCode(

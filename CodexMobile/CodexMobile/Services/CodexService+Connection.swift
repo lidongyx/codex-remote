@@ -11,8 +11,8 @@ import UIKit
 extension CodexService {
     // Only close codes that prove the saved pairing/session can no longer be reused
     // should force a QR reset. Temporary delivery loss uses the dedicated `4004`
-    // close so `4002` can stay available for "session unavailable right now" cases.
-    private static let permanentRelayCloseCodeRawValues: Set<UInt16> = [4000, 4001, 4003]
+    // close so `4002`/`4003` can stay available for reconnect-in-place cases.
+    private static let permanentRelayCloseCodeRawValues: Set<UInt16> = [4000, 4001]
     private static let explicitRelayDropCloseCodeRawValues: Set<UInt16> = [4004]
     private static let maxTrustedReconnectFailures = 3
     private static let trustedReconnectRecoveryMessage =
@@ -859,7 +859,11 @@ extension CodexService {
 
     // Detects connect-time relay closes that still leave the saved session reusable moments later.
     func isRetryableSavedSessionConnectError(_ error: Error) -> Bool {
-        relayCloseCodeRawValue(fromConnectError: error) == 4002
+        guard let rawValue = relayCloseCodeRawValue(fromConnectError: error) else {
+            return false
+        }
+
+        return rawValue == 4002 || rawValue == 4003
     }
 
     // Keeps auto-recovery reconnects visually quiet, even if stale in-flight sync calls fail after the socket drops.
@@ -1001,28 +1005,29 @@ extension CodexService {
         switch rawValue {
         case 4001:
             return L10n.string("This relay session was replaced by another Mac connection. Scan a new QR code to reconnect.")
-        case 4003:
-            return L10n.string("This device was replaced by a newer connection. Scan a new QR code to reconnect.")
         default:
             return L10n.string("This relay pairing is no longer valid. Scan a new QR code to reconnect.")
         }
     }
 
-    // Treats `4002` as ambiguous while the Mac bridge may still be recreating the same relay session.
-    func retryableSessionUnavailableMessage(for closeCode: NWProtocolWebSocket.CloseCode?) -> String? {
-        guard relayCloseCodeRawValue(closeCode) == 4002 else {
+    private func retryableSavedSessionMessage(for rawValue: UInt16?) -> String? {
+        switch rawValue {
+        case 4002:
+            return L10n.string("Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code.")
+        case 4003:
+            return L10n.string("This connection was replaced while reconnecting. Remodex will try to restore your saved Mac.")
+        default:
             return nil
         }
+    }
 
-        return L10n.string("Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code.")
+    // Treats `4002` and `4003` as reconnectable while the current socket is being replaced.
+    func retryableSessionUnavailableMessage(for closeCode: NWProtocolWebSocket.CloseCode?) -> String? {
+        retryableSavedSessionMessage(for: relayCloseCodeRawValue(closeCode))
     }
 
     func retryableSessionUnavailableMessage(forConnectError error: Error) -> String? {
-        guard isRetryableSavedSessionConnectError(error) else {
-            return nil
-        }
-
-        return L10n.string("Trying to reach your saved Mac. Remodex will keep retrying. If you restarted the bridge on your Mac, scan the new QR code.")
+        retryableSavedSessionMessage(for: relayCloseCodeRawValue(fromConnectError: error))
     }
 
     // Surfaces relay-enforced drops that keep the pairing valid but lost the current send.
