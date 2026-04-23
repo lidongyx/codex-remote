@@ -6,6 +6,7 @@
 
 const { execFile } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { promisify } = require("util");
 const { findRolloutFileForThread, resolveSessionsRoot } = require("./rollout-watch");
@@ -64,6 +65,7 @@ async function handleDesktopMethod(method, params, options = {}) {
   const executor = options.executor || execFileAsync;
   const env = options.env || process.env;
   const fsModule = options.fsModule || fs;
+  const osModule = options.osModule || os;
   const isAppRunning = options.isAppRunning || null;
   const sleepFn = options.sleepFn || sleep;
   const appBootWaitMs = options.appBootWaitMs ?? DEFAULT_APP_BOOT_WAIT_MS;
@@ -101,9 +103,22 @@ async function handleDesktopMethod(method, params, options = {}) {
       return readBridgePreferences(options);
     case "desktop/preferences/update":
       return updateBridgePreferences(params, options);
+    case "desktop/filesystem/listDirectory":
+      return listLocalDirectory(params, { fsModule, osModule });
     default:
       throw desktopError("unknown_method", `Unknown desktop method: ${method}`);
   }
+}
+
+function listLocalDirectory(params, { fsModule, osModule }) {
+  const directoryPath = resolveDirectoryPath(params, { fsModule, osModule });
+  const children = readChildDirectories(directoryPath, { fsModule });
+
+  return {
+    directory: buildDirectoryDescriptor(directoryPath, { fsModule, osModule }),
+    parentDirectory: buildParentDirectoryDescriptor(directoryPath, { fsModule, osModule }),
+    children,
+  };
 }
 
 // Waits for fresh phone-authored chats to materialize locally before deep-linking them on Mac.
@@ -290,6 +305,185 @@ async function updateBridgePreferences(params, options = {}) {
   return options.updateBridgePreferences({
     keepMacAwake: params.keepMacAwake,
   });
+}
+
+function resolveDirectoryPath(params, { fsModule, osModule }) {
+  const requestedPath = firstNonEmptyString([
+    params?.path,
+    params?.directoryPath,
+    params?.directory_path,
+  ]);
+  const defaultPath = osModule.homedir();
+  const expandedPath = expandHomePath(requestedPath || defaultPath, osModule);
+  const absolutePath = path.isAbsolute(expandedPath)
+    ? expandedPath
+    : path.resolve(defaultPath, expandedPath);
+  const normalizedPath = realpathIfPossible(absolutePath, fsModule);
+
+  if (!fsModule.existsSync(normalizedPath)) {
+    throw desktopError(
+      "directory_not_found",
+      "That folder is not available on this Mac."
+    );
+  }
+
+  if (!isDirectoryPath(normalizedPath, fsModule)) {
+    throw desktopError(
+      "not_a_directory",
+      "The selected path is not a folder."
+    );
+  }
+
+  return normalizedPath;
+}
+
+function readChildDirectories(directoryPath, { fsModule }) {
+  let entries;
+  try {
+    entries = fsModule.readdirSync(directoryPath, { withFileTypes: true });
+  } catch (error) {
+    throw desktopError(
+      "directory_read_failed",
+      "Could not read that folder on this Mac.",
+      error
+    );
+  }
+
+  return entries
+    .map((entry) => normalizeDirectoryEntry(entry, directoryPath, fsModule))
+    .filter((entry) => entry && entry.isDirectory && !entry.isHidden)
+    .map((entry) => buildDirectoryDescriptor(entry.path, { fsModule }))
+    .sort(compareDirectoryDescriptors);
+}
+
+function normalizeDirectoryEntry(entry, directoryPath, fsModule) {
+  if (!entry) {
+    return null;
+  }
+
+  if (typeof entry === "string") {
+    const entryPath = path.join(directoryPath, entry);
+    return {
+      name: entry,
+      path: entryPath,
+      isDirectory: isDirectoryPath(entryPath, fsModule),
+      isHidden: entry.startsWith("."),
+    };
+  }
+
+  const name = typeof entry.name === "string" ? entry.name : "";
+  if (!name) {
+    return null;
+  }
+
+  const entryPath = path.join(directoryPath, name);
+  const isDirectory = typeof entry.isDirectory === "function"
+    ? entry.isDirectory()
+    : isDirectoryPath(entryPath, fsModule);
+
+  return {
+    name,
+    path: entryPath,
+    isDirectory,
+    isHidden: name.startsWith("."),
+  };
+}
+
+function buildDirectoryDescriptor(directoryPath, { fsModule, osModule } = {}) {
+  const normalizedPath = realpathIfPossible(directoryPath, fsModule || fs);
+  const homePath = osModule?.homedir?.() || null;
+  return {
+    path: normalizedPath,
+    name: directoryDisplayName(normalizedPath, homePath),
+    isHomeDirectory: !!homePath && samePath(normalizedPath, homePath),
+    isRootDirectory: path.dirname(normalizedPath) === normalizedPath,
+  };
+}
+
+function buildParentDirectoryDescriptor(directoryPath, { fsModule, osModule }) {
+  const parentPath = path.dirname(directoryPath);
+  if (parentPath === directoryPath) {
+    return null;
+  }
+
+  return buildDirectoryDescriptor(parentPath, { fsModule, osModule });
+}
+
+function directoryDisplayName(directoryPath, homePath = null) {
+  if (homePath && samePath(directoryPath, homePath)) {
+    return "Home";
+  }
+
+  const baseName = path.basename(directoryPath);
+  return baseName || directoryPath;
+}
+
+function compareDirectoryDescriptors(left, right) {
+  if (!!left.isHidden !== !!right.isHidden) {
+    return left.isHidden ? 1 : -1;
+  }
+
+  return left.name.localeCompare(right.name, undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
+}
+
+function expandHomePath(value, osModule) {
+  if (typeof value !== "string") {
+    return osModule.homedir();
+  }
+
+  if (value === "~") {
+    return osModule.homedir();
+  }
+
+  if (value.startsWith("~/")) {
+    return path.join(osModule.homedir(), value.slice(2));
+  }
+
+  return value;
+}
+
+function realpathIfPossible(targetPath, fsModule) {
+  try {
+    if (typeof fsModule.realpathSync?.native === "function") {
+      return fsModule.realpathSync.native(targetPath);
+    }
+    if (typeof fsModule.realpathSync === "function") {
+      return fsModule.realpathSync(targetPath);
+    }
+  } catch {
+    // Fall back to the requested path below; existence is checked separately.
+  }
+
+  return targetPath;
+}
+
+function isDirectoryPath(targetPath, fsModule) {
+  try {
+    return fsModule.statSync(targetPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function samePath(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") {
+    return false;
+  }
+
+  return path.resolve(left) === path.resolve(right);
+}
+
+function firstNonEmptyString(values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
 }
 
 function resolveThreadId(params) {

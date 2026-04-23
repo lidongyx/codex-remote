@@ -379,3 +379,170 @@ test("desktop/preferences/update rejects invalid bridge preference payloads", as
 
   assert.equal(responses[0].error?.data?.errorCode, "invalid_bridge_preferences");
 });
+
+test("desktop/filesystem/listDirectory returns visible child directories under the requested folder", async () => {
+  const responses = [];
+  const fakeFS = {
+    existsSync(targetPath) {
+      return [
+        "/Users/tester",
+        "/Users/tester/Desktop",
+        "/Users/tester/Documents",
+        "/Users/tester/alpha",
+        "/Users/tester/zeta",
+        "/Users/tester/.hidden",
+        "/Users",
+      ].includes(targetPath);
+    },
+    readdirSync(targetPath) {
+      assert.equal(targetPath, "/Users/tester");
+      return [
+        { name: "zeta", isDirectory: () => true },
+        { name: "Desktop", isDirectory: () => true },
+        { name: ".hidden", isDirectory: () => true },
+        { name: "notes.txt", isDirectory: () => false },
+        { name: "alpha", isDirectory: () => true },
+        { name: "Documents", isDirectory: () => true },
+      ];
+    },
+    realpathSync(targetPath) {
+      return targetPath;
+    },
+    statSync(targetPath) {
+      const isDirectory = !targetPath.endsWith(".txt");
+      return {
+        isDirectory: () => isDirectory,
+      };
+    },
+  };
+
+  handleDesktopRequest(JSON.stringify({
+    id: "request-7",
+    method: "desktop/filesystem/listDirectory",
+    params: {
+      path: "/Users/tester",
+    },
+  }), (response) => {
+    responses.push(JSON.parse(response));
+  }, {
+    platform: "darwin",
+    fsModule: fakeFS,
+    osModule: {
+      homedir: () => "/Users/tester",
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(responses, [{
+    id: "request-7",
+    result: {
+      directory: {
+        path: "/Users/tester",
+        name: "Home",
+        isHomeDirectory: true,
+        isRootDirectory: false,
+      },
+      parentDirectory: {
+        path: "/Users",
+        name: "Users",
+        isHomeDirectory: false,
+        isRootDirectory: false,
+      },
+      children: [
+        {
+          path: "/Users/tester/alpha",
+          name: "alpha",
+          isHomeDirectory: false,
+          isRootDirectory: false,
+        },
+        {
+          path: "/Users/tester/Desktop",
+          name: "Desktop",
+          isHomeDirectory: false,
+          isRootDirectory: false,
+        },
+        {
+          path: "/Users/tester/Documents",
+          name: "Documents",
+          isHomeDirectory: false,
+          isRootDirectory: false,
+        },
+        {
+          path: "/Users/tester/zeta",
+          name: "zeta",
+          isHomeDirectory: false,
+          isRootDirectory: false,
+        },
+      ],
+    },
+  }]);
+});
+
+test("desktop/filesystem/listDirectory defaults to the home directory when no path is provided", async () => {
+  const responses = [];
+  const fakeFS = {
+    existsSync(targetPath) {
+      return targetPath === "/Users/tester";
+    },
+    readdirSync() {
+      return [];
+    },
+    realpathSync(targetPath) {
+      return targetPath;
+    },
+    statSync() {
+      return {
+        isDirectory: () => true,
+      };
+    },
+  };
+
+  handleDesktopRequest(JSON.stringify({
+    id: "request-8",
+    method: "desktop/filesystem/listDirectory",
+    params: {},
+  }), (response) => {
+    responses.push(JSON.parse(response));
+  }, {
+    platform: "darwin",
+    fsModule: fakeFS,
+    osModule: {
+      homedir: () => "/Users/tester",
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(responses[0].result?.directory?.path, "/Users/tester");
+  assert.equal(responses[0].result?.directory?.isHomeDirectory, true);
+});
+
+test("desktop/filesystem/listDirectory rejects missing folders", async () => {
+  const responses = [];
+  const fakeFS = {
+    existsSync() {
+      return false;
+    },
+  };
+
+  handleDesktopRequest(JSON.stringify({
+    id: "request-9",
+    method: "desktop/filesystem/listDirectory",
+    params: {
+      path: "/Users/tester/missing",
+    },
+  }), (response) => {
+    responses.push(JSON.parse(response));
+  }, {
+    platform: "darwin",
+    fsModule: fakeFS,
+    osModule: {
+      homedir: () => "/Users/tester",
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(responses[0].error?.data?.errorCode, "directory_not_found");
+});

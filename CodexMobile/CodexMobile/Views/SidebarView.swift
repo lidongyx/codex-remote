@@ -23,6 +23,7 @@ struct SidebarView: View {
     @State private var isCreatingThread = false
     @State private var groupedThreads: [SidebarThreadGroup] = []
     @State private var isShowingNewChatProjectPicker = false
+    @State private var isShowingLocalDirectoryBrowser = false
     @State private var projectGroupPendingArchive: SidebarThreadGroup? = nil
     @State private var threadPendingDeletion: CodexThread? = nil
     @State private var createThreadErrorMessage: String? = nil
@@ -164,8 +165,16 @@ struct SidebarView: View {
                 },
                 onSelectWithoutProject: {
                     handleNewChatTap(preferredProjectPath: nil)
+                },
+                onBrowseFilesystem: {
+                    isShowingLocalDirectoryBrowser = true
                 }
             )
+        }
+        .sheet(isPresented: $isShowingLocalDirectoryBrowser) {
+            SidebarMacDirectoryBrowserSheet { directoryPath in
+                handleNewChatTap(preferredProjectPath: directoryPath)
+            }
         }
         .confirmationDialog(
             "Archive \"\(projectGroupPendingArchive?.label ?? "project")\"?",
@@ -244,11 +253,6 @@ struct SidebarView: View {
 
     // Shows a native sheet so folder names and full paths stay readable on small screens.
     private func handleNewChatButtonTap() {
-        if newChatProjectChoices.isEmpty {
-            handleNewChatTap(preferredProjectPath: nil)
-            return
-        }
-
         isShowingNewChatProjectPicker = true
     }
 
@@ -467,6 +471,7 @@ private struct SidebarNewChatProjectPickerSheet: View {
     let onSelectProject: (String) -> Void
     let onSelectWorktreeProject: (String) -> Void
     let onSelectWithoutProject: () -> Void
+    let onBrowseFilesystem: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -480,28 +485,58 @@ private struct SidebarNewChatProjectPickerSheet: View {
                         .listRowBackground(Color.clear)
                 }
 
-                Section("Local") {
-                    ForEach(choices) { choice in
-                        Button {
-                            dismiss()
-                            onSelectProject(choice.projectPath)
-                        } label: {
-                            HStack(spacing: 12) {
-                                if choice.iconSystemName == "arrow.triangle.branch" {
-                                    CodexWorktreeIcon(pointSize: 16, weight: .medium)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    Image(systemName: choice.iconSystemName)
-                                        .font(AppFont.body(weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                }
+                Section("Browse Mac") {
+                    Button {
+                        dismiss()
+                        Task { @MainActor in
+                            onBrowseFilesystem()
+                        }
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "folder")
+                                .font(AppFont.body(weight: .medium))
+                                .foregroundStyle(.secondary)
 
-                                Text(choice.label)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Browse folders")
                                     .font(AppFont.body(weight: .semibold))
                                     .foregroundStyle(.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Text("Pick any local folder on your Mac as the working directory for a new chat.")
+                                    .font(AppFont.body())
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(.vertical, 2)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
+                if !choices.isEmpty {
+                    Section("Local") {
+                        ForEach(choices) { choice in
+                            Button {
+                                dismiss()
+                                onSelectProject(choice.projectPath)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    if choice.iconSystemName == "arrow.triangle.branch" {
+                                        CodexWorktreeIcon(pointSize: 16, weight: .medium)
+                                            .foregroundStyle(.secondary)
+                                    } else {
+                                        Image(systemName: choice.iconSystemName)
+                                            .font(AppFont.body(weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Text(choice.label)
+                                        .font(AppFont.body(weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.vertical, 2)
+                            }
                         }
                     }
                 }
@@ -563,7 +598,7 @@ private struct SidebarNewChatProjectPickerSheet: View {
 
                 Section {
                     // Explains the existing scoping rule at the exact moment the user chooses it.
-                    Text("Chats started in a project stay scoped to that working directory. Worktree chats start in a managed detached worktree. If you pick Cloud, the chat is global.")
+                    Text("Chats started in a project or browsed folder stay scoped to that working directory. Worktree chats start in a managed detached worktree. If you pick Cloud, the chat is global.")
                         .font(AppFont.caption())
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -581,5 +616,188 @@ private struct SidebarNewChatProjectPickerSheet: View {
             }
         }
         .presentationDetents(choices.count > 4 ? [.medium, .large] : [.medium])
+    }
+}
+
+private struct SidebarMacDirectoryBrowserSheet: View {
+    let onSelectDirectory: (String) -> Void
+
+    @Environment(CodexService.self) private var codex
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var currentPath: String? = nil
+    @State private var listing: DesktopDirectoryListing? = nil
+    @State private var isLoading = false
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Browse your paired Mac and start a chat directly in any local folder.")
+                        .font(AppFont.body())
+                        .foregroundStyle(.secondary)
+                        .listRowBackground(Color.clear)
+                }
+
+                if let listing {
+                    Section("Current Folder") {
+                        Button {
+                            let selectedPath = listing.directory.path
+                            dismiss()
+                            onSelectDirectory(selectedPath)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(listing.directory.name)
+                                    .font(AppFont.body(weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Text(listing.directory.path)
+                                    .font(AppFont.caption())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    if let parentDirectory = listing.parentDirectory {
+                        Section {
+                            Button {
+                                currentPath = parentDirectory.path
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "arrow.up.forward.app")
+                                        .font(AppFont.body(weight: .medium))
+                                        .foregroundStyle(.secondary)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(parentDirectory.name)
+                                            .font(AppFont.body(weight: .semibold))
+                                            .foregroundStyle(.primary)
+                                        Text(parentDirectory.path)
+                                            .font(AppFont.caption())
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        } header: {
+                            Text("Parent")
+                        }
+                    }
+
+                    Section("Folders") {
+                        if listing.children.isEmpty {
+                            Text("No visible subfolders here.")
+                                .font(AppFont.body())
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(listing.children) { child in
+                                Button {
+                                    currentPath = child.path
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: child.isHomeDirectory ? "house" : "folder")
+                                            .font(AppFont.body(weight: .medium))
+                                            .foregroundStyle(.secondary)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(child.name)
+                                                .font(AppFont.body(weight: .semibold))
+                                                .foregroundStyle(.primary)
+                                            Text(child.path)
+                                                .font(AppFont.caption())
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+                    }
+                } else if isLoading {
+                    Section {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Loading folders...")
+                                .font(AppFont.body())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Section {
+                        Text(errorMessage ?? "Could not load folders on your Mac.")
+                            .font(AppFont.body())
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Retry") {
+                            Task { @MainActor in
+                                await loadDirectory(path: currentPath)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(listing?.directory.name ?? "Browse Mac")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                if let listing, !isLoading {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Start Here") {
+                            let selectedPath = listing.directory.path
+                            dismiss()
+                            onSelectDirectory(selectedPath)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: currentPath ?? "__home__") {
+            await loadDirectory(path: currentPath)
+        }
+        .alert(
+            "Could not browse folders",
+            isPresented: Binding(
+                get: { errorMessage != nil && listing != nil },
+                set: { if !$0 { errorMessage = nil } }
+            ),
+            actions: {
+                Button("OK", role: .cancel) {
+                    errorMessage = nil
+                }
+            },
+            message: {
+                Text(errorMessage ?? "Please try again.")
+            }
+        )
+    }
+
+    @MainActor
+    private func loadDirectory(path: String?) async {
+        let service = DesktopFilesystemService(codex: codex)
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let loadedListing = try await service.listDirectory(path: path)
+            listing = loadedListing
+            currentPath = loadedListing.directory.path
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            if listing == nil {
+                return
+            }
+        }
     }
 }
