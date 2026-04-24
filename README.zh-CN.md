@@ -34,13 +34,23 @@ Codex Remote 是一个本地优先的工作区，用于让 iPhone 连接 Codex�
 - 如果要从源码构建 iOS App，需要 Xcode 16+
 - 需要一台 iPhone 用于真机配对和测试
 
-## 快速开始
+## 快速开始：连接方式 1 本地配对
+
+连接方式 1 是当前主要可用流程。它会在你的 Mac 上启动本地 relay 和 Node.js bridge，然后通过 bridge 打印出来的二维码，把 iPhone App 配对到这台 Mac。
+
+### 1. 克隆并安装 Node 依赖
+
+在仓库根目录执行：
 
 先安装 bridge 和 relay 的 Node 依赖：
 
 ```sh
 npm run bootstrap:node
 ```
+
+这会分别安装 `phodex-bridge/` 和 `relay/` 的依赖。
+
+### 2. 构建并安装 iOS App
 
 然后从源码构建 iOS App：
 
@@ -52,12 +62,31 @@ open CodexMobile.xcodeproj
 在 Xcode 中：
 
 1. 选择你自己的签名团队。
-2. 将 `CodexMobile` target 构建并安装到真机。
+2. 选择一台真实 iPhone 作为运行目标。
+3. 将 `CodexMobile` target 构建并运行到这台设备上。
+
+建议先把 App 安装到手机上，再启动 bridge，这样二维码出现后可以立即扫码。
+
+### 3. 启动本地 relay 和 bridge
 
 接着在仓库根目录启动本地开发环境：
 
 ```sh
 ./run-local-remodex.sh
+```
+
+这个脚本会：
+
+- 在 `0.0.0.0:9000` 启动本地 relay
+- 自动选择一个 iPhone 可访问的局域网主机名写入二维码
+- 从 `phodex-bridge/` 启动源码版 bridge
+- 打印 relay URL、二维码和配对码
+- 让 relay 在当前终端前台保持运行，直到你按 `Ctrl+C`
+
+如果 iPhone 访问不到自动识别的主机名，请显式传入 Mac 的局域网 IP 或 `.local` 主机名：
+
+```sh
+./run-local-remodex.sh --hostname 192.168.1.23
 ```
 
 也可以直接使用根目录脚本：
@@ -75,18 +104,48 @@ npm run bridge:status
 npm run bridge:up
 ```
 
-Windows 使用注意：
+### 4. 在 iPhone 上配对
+
+当 `./run-local-remodex.sh` 打印二维码后：
+
+1. 保持这个终端窗口打开。
+2. 确认 iPhone 和 Mac 在同一个局域网内，或者确认二维码里的 relay 主机名能被 iPhone 访问。
+3. 在 iPhone 上打开 App。
+4. 选择连接方式 1，并扫描终端中的二维码。
+5. 如果不方便扫码，可以在 App 提示时手动输入终端中的配对码。
+6. 确认 App 显示 Mac 已连接。
+
+每次重新执行 `bridge:up` 或 `run-local-remodex.sh` 都会生成新的配对会话和二维码。旧二维码和旧配对码都应视为已失效。
+
+### 5. 从手机使用 Codex
+
+连接成功后：
+
+1. 在 iOS App 中新建或打开一个会话。
+2. 在提示时选择或创建本地 workspace。
+3. 从手机发送 prompt。
+4. 在任务运行期间保持 Mac 唤醒，并保持 bridge 运行。
+5. 确认 Codex 的回复、reasoning 和工具输出会实时返回到手机。
+
+Codex 执行、文件访问、shell 命令和 Git 操作仍然都发生在你的 Mac 本地。手机只是远程 UI。
+
+### Windows 使用注意
 
 - 如果 bridge 宿主机是 Windows，请使用 `npm run bridge:up` 或 `npm run bridge:run`，不要使用 `./run-local-remodex.sh`。
 - 当前 Windows bridge 路径以**前台运行**为主，macOS 的 launch agent 和相关 service 管理命令不适用于 Windows。
 - Windows 上的配对和 relay 路由仍然可以工作，但 bridge 进程的常驻和重启需要你自己管理。
 - 详细说明见 [Docs/windows-bridge-notes.zh-CN.md](Docs/windows-bridge-notes.zh-CN.md)。
 
-启动之后：
+## App 内的连接方式
 
-1. 在 iPhone 上打开 App。
-2. 在 App 内扫描终端中的二维码。
-3. 新建会话，确认 Codex 的响应可以经由你的 Mac 实时返回到手机。
+设置页中会看到两个连接方式：
+
+- **连接方式 1** 是当前主要可用的本地 bridge 流程，也就是上面描述的流程。普通开发和测试优先使用它。
+- **连接方式 2** 是基于 `codexd` 和 Rust relay 骨架的 V2 beta 流程。它和连接方式 1 是刻意分开的，协议上也不兼容连接方式 1 的现有配对。
+
+除非你正在专门验证 V2 daemon 或 relay，否则请使用连接方式 1。
+
+## 手动运行 Bridge
 
 如果你只想单独运行 bridge：
 
@@ -140,6 +199,14 @@ launchctl print gui/$(id -u)/com.remodex.bridge | sed -n '1,30p'
 ```
 
 如果你需要重新配对，请始终使用**刚刚那一次 `up` 打印出来的最新二维码或配对码**。每次重新执行 `up` 都会生成新的 pairing session，之前的码都应视为失效。
+
+## 本地流程排查
+
+- **扫码后手机连不上**：确认 Mac 和 iPhone 在同一网络，并尝试 `./run-local-remodex.sh --hostname <Mac 的局域网 IP>`。
+- **9000 端口已被占用**：停止占用端口的进程，或改用 `./run-local-remodex.sh --port <空闲端口>`。
+- **二维码失效**：重新执行 `npm run bridge:up` 或 `./run-local-remodex.sh`，扫描新打印的二维码。
+- **App 连到了错误的 bridge**：先执行 `npm run bridge:status`，再从当前仓库执行 `npm run bridge:stop` 和 `npm run bridge:up`。
+- **Codex 没有启动**：确认 `codex` CLI 已安装，并且 bridge 运行时所在的 shell 环境可以访问到它。
 
 ## 仓库结构
 

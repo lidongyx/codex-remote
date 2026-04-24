@@ -6,11 +6,28 @@
 import SwiftUI
 import UIKit
 
+private enum SettingsConnectionMethod: String, CaseIterable, Identifiable {
+    case legacy
+    case v2
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .legacy:
+            return L10n.string("Method 1")
+        case .v2:
+            return L10n.string("Method 2")
+        }
+    }
+}
+
 struct SettingsView: View {
     @Environment(CodexService.self) private var codex
 
     @AppStorage("codex.appFontStyle") private var appFontStyleRawValue = AppFont.defaultStoredStyleRawValue
     @State private var isShowingMacNameSheet = false
+    @State private var selectedConnectionMethod = SettingsConnectionMethod.legacy
 
     private let runtimeAutoValue = "__AUTO__"
     private let runtimeNormalValue = "__NORMAL__"
@@ -25,11 +42,10 @@ struct SettingsView: View {
                 SettingsGPTAccountCard()
                 SettingsBridgeVersionCard()
                 runtimeDefaultsSection
-                SettingsV2WorkspaceCard()
                 SettingsV2TestingCard()
-                SettingsAboutCard()
                 SettingsUsageCard()
-                legacyConnectionSection
+                SettingsAboutCard()
+                connectionSection
             }
             .padding()
         }
@@ -130,79 +146,95 @@ struct SettingsView: View {
 
     // MARK: - Connection
 
-    @ViewBuilder private var legacyConnectionSection: some View {
-        SettingsCard(title: "Connection Method 1") {
-            Text("Current shipping path. Uses the Remodex bridge on your Mac with saved relay pairing and QR/manual pairing.")
-                .font(AppFont.caption())
-                .foregroundStyle(.secondary)
-
-            Text("Method 1 stays separate from Method 2. Its saved pairing does not automatically carry over to the V2 beta flow.")
-                .font(AppFont.caption())
-                .foregroundStyle(.secondary)
-
-            if let trustedPairPresentation = codex.trustedPairPresentation {
-                SettingsTrustedMacCard(
-                    presentation: trustedPairPresentation,
-                    connectionStatusLabel: connectionStatusLabel,
-                    onEditName: {
-                        isShowingMacNameSheet = true
-                    }
-                )
-            } else {
-                Text("No paired Mac")
-                    .font(AppFont.subheadline(weight: .semibold))
-                    .foregroundStyle(.primary)
-            }
-
-            if connectionPhaseShowsProgress {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text(connectionProgressLabel)
-                        .font(AppFont.caption())
-                        .foregroundStyle(.secondary)
+    @ViewBuilder private var connectionSection: some View {
+        SettingsCard(title: "Connection") {
+            Picker("Connection Method", selection: $selectedConnectionMethod) {
+                ForEach(SettingsConnectionMethod.allCases) { method in
+                    Text(method.title).tag(method)
                 }
             }
+            .pickerStyle(.segmented)
 
-            if case .retrying(_, let message) = codex.connectionRecoveryState,
-               !message.isEmpty {
-                Text(message)
+            switch selectedConnectionMethod {
+            case .legacy:
+                legacyConnectionContent
+            case .v2:
+                SettingsV2WorkspaceContent()
+            }
+        }
+    }
+
+    @ViewBuilder private var legacyConnectionContent: some View {
+        Text("Current shipping path. Uses the Remodex bridge on your Mac with saved relay pairing and QR/manual pairing.")
+            .font(AppFont.caption())
+            .foregroundStyle(.secondary)
+
+        Text("Method 1 stays separate from Method 2. Its saved pairing does not automatically carry over to the V2 beta flow.")
+            .font(AppFont.caption())
+            .foregroundStyle(.secondary)
+
+        if let trustedPairPresentation = codex.trustedPairPresentation {
+            SettingsTrustedMacCard(
+                presentation: trustedPairPresentation,
+                connectionStatusLabel: connectionStatusLabel,
+                onEditName: {
+                    isShowingMacNameSheet = true
+                }
+            )
+        } else {
+            Text("No paired Mac")
+                .font(AppFont.subheadline(weight: .semibold))
+                .foregroundStyle(.primary)
+        }
+
+        if connectionPhaseShowsProgress {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text(connectionProgressLabel)
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
             }
+        }
 
-            if let error = codex.lastErrorMessage, !error.isEmpty {
-                Text(error)
-                    .font(AppFont.caption())
-                    .foregroundStyle(.red)
-            }
-
-            Divider()
-
-            Toggle("Keep Mac reachable", isOn: keepMacAwakeWhileBridgeRunsBinding)
-                .tint(settingsAccentColor)
-
-            Text(codex.keepMacAwakeWhileBridgeRuns
-                 ? "Uses macOS caffeinate while the bridge is running so your Mac stays reachable even if the display turns off. Best while charging."
-                 : "Your Mac can go back to sleeping normally when the bridge is idle.")
+        if case .retrying(_, let message) = codex.connectionRecoveryState,
+           !message.isEmpty {
+            Text(message)
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
+        }
 
-            if !codex.isConnected {
-                Text("Saved on this iPhone. It will sync to your Mac the next time the bridge reconnects.")
-                    .font(AppFont.caption())
-                    .foregroundStyle(.secondary)
+        if let error = codex.lastErrorMessage, !error.isEmpty {
+            Text(error)
+                .font(AppFont.caption())
+                .foregroundStyle(.red)
+        }
+
+        Divider()
+
+        Toggle("Keep Mac reachable", isOn: keepMacAwakeWhileBridgeRunsBinding)
+            .tint(settingsAccentColor)
+
+        Text(codex.keepMacAwakeWhileBridgeRuns
+             ? "Uses macOS caffeinate while the bridge is running so your Mac stays reachable even if the display turns off. Best while charging."
+             : "Your Mac can go back to sleeping normally when the bridge is idle.")
+            .font(AppFont.caption())
+            .foregroundStyle(.secondary)
+
+        if !codex.isConnected {
+            Text("Saved on this iPhone. It will sync to your Mac the next time the bridge reconnects.")
+                .font(AppFont.caption())
+                .foregroundStyle(.secondary)
+        }
+
+        if codex.isConnected {
+            SettingsButton("Disconnect", role: .destructive) {
+                HapticFeedback.shared.triggerImpactFeedback()
+                disconnectRelay()
             }
-
-            if codex.isConnected {
-                SettingsButton("Disconnect", role: .destructive) {
-                    HapticFeedback.shared.triggerImpactFeedback()
-                    disconnectRelay()
-                }
-            } else if codex.hasTrustedMacReconnectCandidate {
-                SettingsButton("Forget Pair", role: .destructive) {
-                    HapticFeedback.shared.triggerImpactFeedback()
-                    codex.forgetTrustedMac()
-                }
+        } else if codex.hasTrustedMacReconnectCandidate {
+            SettingsButton("Forget Pair", role: .destructive) {
+                HapticFeedback.shared.triggerImpactFeedback()
+                codex.forgetTrustedMac()
             }
         }
     }
@@ -843,47 +875,45 @@ private struct SettingsAboutCard: View {
     }
 }
 
-private struct SettingsV2WorkspaceCard: View {
+private struct SettingsV2WorkspaceContent: View {
     @Environment(CodexV2PreviewClient.self) private var codexV2
     @State private var isShowingV2Workspace = false
 
     var body: some View {
-        SettingsCard(title: "Connection Method 2") {
-            Text("Separate beta path. Uses `codexd` and the V2 relay instead of the legacy bridge.")
+        Text("Separate beta path. Uses `codexd` and the V2 relay instead of the legacy bridge.")
+            .font(AppFont.caption())
+            .foregroundStyle(.secondary)
+
+        Text("Method 2 is not wire-compatible with Method 1. Treat it as a separate connection flow and a separate workspace entry.")
+            .font(AppFont.caption())
+            .foregroundStyle(.secondary)
+
+        Divider()
+
+        HStack(spacing: 8) {
+            SettingsStatusPill(label: codexV2.isConnected ? "Connected" : (codexV2.isConnecting ? "Connecting" : "Disconnected"))
+            SettingsStatusPill(label: "V2")
+            if let runtimeMode = codexV2.daemonHealth?.runtimeMode,
+               !runtimeMode.isEmpty {
+                SettingsStatusPill(label: runtimeMode)
+            }
+        }
+
+        if let workspaceRoot = codexV2.daemonHealth?.workspaceRoot,
+           !workspaceRoot.isEmpty {
+            Text(workspaceRoot)
+                .font(AppFont.mono(.caption))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        } else {
+            Text("Open Method 2 to connect, refresh chats, and validate the new stack.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
+        }
 
-            Text("Method 2 is not wire-compatible with Method 1. Treat it as a separate connection flow and a separate workspace entry.")
-                .font(AppFont.caption())
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            HStack(spacing: 8) {
-                SettingsStatusPill(label: codexV2.isConnected ? "Connected" : (codexV2.isConnecting ? "Connecting" : "Disconnected"))
-                SettingsStatusPill(label: "V2")
-                if let runtimeMode = codexV2.daemonHealth?.runtimeMode,
-                   !runtimeMode.isEmpty {
-                    SettingsStatusPill(label: runtimeMode)
-                }
-            }
-
-            if let workspaceRoot = codexV2.daemonHealth?.workspaceRoot,
-               !workspaceRoot.isEmpty {
-                Text(workspaceRoot)
-                    .font(AppFont.mono(.caption))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } else {
-                Text("Open Method 2 to connect, refresh chats, and validate the new stack.")
-                    .font(AppFont.caption())
-                    .foregroundStyle(.secondary)
-            }
-
-            SettingsButton("Open Method 2 (V2 beta)") {
-                HapticFeedback.shared.triggerImpactFeedback(style: .light)
-                isShowingV2Workspace = true
-            }
+        SettingsButton("Open Method 2 (V2 beta)") {
+            HapticFeedback.shared.triggerImpactFeedback(style: .light)
+            isShowingV2Workspace = true
         }
         .fullScreenCover(isPresented: $isShowingV2Workspace) {
             NavigationStack {
