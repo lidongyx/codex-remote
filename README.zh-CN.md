@@ -75,6 +75,13 @@ npm run bridge:status
 npm run bridge:up
 ```
 
+Windows 使用注意：
+
+- 如果 bridge 宿主机是 Windows，请使用 `npm run bridge:up` 或 `npm run bridge:run`，不要使用 `./run-local-remodex.sh`。
+- 当前 Windows bridge 路径以**前台运行**为主，macOS 的 launch agent 和相关 service 管理命令不适用于 Windows。
+- Windows 上的配对和 relay 路由仍然可以工作，但 bridge 进程的常驻和重启需要你自己管理。
+- 详细说明见 [Docs/windows-bridge-notes.zh-CN.md](Docs/windows-bridge-notes.zh-CN.md)。
+
 启动之后：
 
 1. 在 iPhone 上打开 App。

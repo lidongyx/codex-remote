@@ -133,6 +133,10 @@ final class CodexServiceTierTests: XCTestCase {
         XCTAssertEqual(service.availableModels.map(\.model), ["gpt-5.4", "gpt-5.5"])
         XCTAssertEqual(service.selectedModelId, "gpt-5.5")
         XCTAssertEqual(service.selectedModelOption()?.model, "gpt-5.5")
+        XCTAssertEqual(
+            service.selectedModelOption()?.supportedReasoningEfforts.map(\.reasoningEffort),
+            ["medium"]
+        )
     }
 
     func testListModelsKeepsValidAppSelectionWhenConfiguredModelIsAlsoMissingFromModelList() async throws {

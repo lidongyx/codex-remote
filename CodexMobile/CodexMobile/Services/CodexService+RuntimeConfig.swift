@@ -436,6 +436,7 @@ private extension CodexService {
         }
 
         var mergedModels = models
+        let capabilityTemplate = fallbackModel(from: models)
         mergedModels.append(
             CodexModelOption(
                 id: configuredModelIdentifier,
@@ -443,8 +444,8 @@ private extension CodexService {
                 displayName: configuredModelIdentifier,
                 description: "Configured model from Codex runtime",
                 isDefault: false,
-                supportedReasoningEfforts: [],
-                defaultReasoningEffort: nil
+                supportedReasoningEfforts: capabilityTemplate?.supportedReasoningEfforts ?? [],
+                defaultReasoningEffort: capabilityTemplate?.defaultReasoningEffort
             )
         )
         return mergedModels

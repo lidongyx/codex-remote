@@ -75,6 +75,13 @@ npm run bridge:status
 npm run bridge:up
 ```
 
+Windows note:
+
+- If your bridge host is Windows, use `npm run bridge:up` or `npm run bridge:run` instead of `./run-local-remodex.sh`.
+- The Windows bridge path is currently foreground-only. The macOS launch agent and related service-management commands do not apply there.
+- Pairing and relay routing can still work on Windows, but you must manage process persistence yourself.
+- See [Docs/windows-bridge-notes.md](Docs/windows-bridge-notes.md) for the detailed Windows setup notes.
+
 After startup:
 
 1. Open the app on your iPhone.
