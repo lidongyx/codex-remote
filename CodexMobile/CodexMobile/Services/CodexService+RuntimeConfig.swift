@@ -87,7 +87,7 @@ extension CodexService {
             )
 
             debugRuntimeLog(
-                "model/list success count=\(decodedModels.count) effective=\(availableModels.count)"
+                "model/list success count=\(decodedModels.count) effective=\(availableModels.count) models=\(availableModels.map(\\.model).joined(separator: \",\"))"
             )
         } catch {
             handleModelListFailure(error)
@@ -415,7 +415,9 @@ private extension CodexService {
         let configuredModel = configObject["model"]?.stringValue?.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        return configuredModel?.isEmpty == true ? nil : configuredModel
+        let normalizedModel = configuredModel?.isEmpty == true ? nil : configuredModel
+        debugRuntimeLog("config/read runtime model=\(normalizedModel ?? \"nil\")")
+        return normalizedModel
     }
 
     func mergedModelsWithConfiguredRuntimeModel(
@@ -432,6 +434,7 @@ private extension CodexService {
             $0.id == configuredModelIdentifier || $0.model == configuredModelIdentifier
         }
         guard !hasConfiguredModel else {
+            debugRuntimeLog("runtime model already present in model/list model=\(configuredModelIdentifier)")
             return models
         }
 
@@ -447,6 +450,9 @@ private extension CodexService {
                 supportedReasoningEfforts: capabilityTemplate?.supportedReasoningEfforts ?? [],
                 defaultReasoningEffort: capabilityTemplate?.defaultReasoningEffort
             )
+        )
+        debugRuntimeLog(
+            "runtime model injected from config/read model=\(configuredModelIdentifier) template=\(capabilityTemplate?.model ?? \"none\")"
         )
         return mergedModels
     }
@@ -488,6 +494,7 @@ private extension CodexService {
            }),
            selectedModelOption(from: availableModels) == nil {
             selectedModelId = configuredModel.id
+            debugRuntimeLog("runtime selection fell back to configured model=\(configuredModel.id)")
         }
 
         let resolvedModel = selectedModelOption(from: availableModels) ?? fallbackModel(from: availableModels)
@@ -511,6 +518,10 @@ private extension CodexService {
         } else {
             selectedReasoningEffort = nil
         }
+
+        debugRuntimeLog(
+            "runtime selection resolved model=\(resolvedModel?.model ?? \"nil\") reasoning=\(selectedReasoningEffort ?? \"nil\")"
+        )
 
         persistRuntimeSelections()
     }
