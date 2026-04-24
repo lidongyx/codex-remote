@@ -91,6 +91,95 @@ final class CodexServiceTierTests: XCTestCase {
         XCTAssertEqual(service.bridgeUpdatePrompt?.command, "npm install -g remodex@1.1.4")
     }
 
+    func testListModelsAddsConfiguredRuntimeModelMissingFromModelList() async throws {
+        let service = makeService()
+        service.isConnected = true
+
+        service.requestTransportOverride = { method, _ in
+            switch method {
+            case "model/list":
+                return RPCMessage(
+                    id: .string(UUID().uuidString),
+                    result: .object([
+                        "data": .array([
+                            self.makeModelValue(
+                                id: "gpt-5.4",
+                                model: "gpt-5.4",
+                                displayName: "GPT-5.4",
+                                isDefault: true
+                            ),
+                        ]),
+                    ]),
+                    includeJSONRPC: false
+                )
+            case "config/read":
+                return RPCMessage(
+                    id: .string(UUID().uuidString),
+                    result: .object([
+                        "config": .object([
+                            "model": .string("gpt-5.5"),
+                        ]),
+                    ]),
+                    includeJSONRPC: false
+                )
+            default:
+                XCTFail("Unexpected method: \(method)")
+                throw CodexServiceError.invalidResponse("unexpected method")
+            }
+        }
+
+        try await service.listModels()
+
+        XCTAssertEqual(service.availableModels.map(\.model), ["gpt-5.4", "gpt-5.5"])
+        XCTAssertEqual(service.selectedModelId, "gpt-5.5")
+        XCTAssertEqual(service.selectedModelOption()?.model, "gpt-5.5")
+    }
+
+    func testListModelsKeepsValidAppSelectionWhenConfiguredModelIsAlsoMissingFromModelList() async throws {
+        let service = makeService()
+        service.isConnected = true
+        service.setSelectedModelId("gpt-5.4")
+
+        service.requestTransportOverride = { method, _ in
+            switch method {
+            case "model/list":
+                return RPCMessage(
+                    id: .string(UUID().uuidString),
+                    result: .object([
+                        "data": .array([
+                            self.makeModelValue(
+                                id: "gpt-5.4",
+                                model: "gpt-5.4",
+                                displayName: "GPT-5.4",
+                                isDefault: true
+                            ),
+                        ]),
+                    ]),
+                    includeJSONRPC: false
+                )
+            case "config/read":
+                return RPCMessage(
+                    id: .string(UUID().uuidString),
+                    result: .object([
+                        "config": .object([
+                            "model": .string("gpt-5.5"),
+                        ]),
+                    ]),
+                    includeJSONRPC: false
+                )
+            default:
+                XCTFail("Unexpected method: \(method)")
+                throw CodexServiceError.invalidResponse("unexpected method")
+            }
+        }
+
+        try await service.listModels()
+
+        XCTAssertEqual(service.availableModels.map(\.model), ["gpt-5.4", "gpt-5.5"])
+        XCTAssertEqual(service.selectedModelId, "gpt-5.4")
+        XCTAssertEqual(service.selectedModelOption()?.model, "gpt-5.4")
+    }
+
     private func makeService() -> CodexService {
         let suiteName = "CodexServiceTierTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
@@ -112,5 +201,27 @@ final class CodexServiceTierTests: XCTestCase {
             ],
             defaultReasoningEffort: "medium"
         )
+    }
+
+    private func makeModelValue(
+        id: String,
+        model: String,
+        displayName: String,
+        isDefault: Bool
+    ) -> JSONValue {
+        .object([
+            "id": .string(id),
+            "model": .string(model),
+            "displayName": .string(displayName),
+            "description": .string("Test model"),
+            "isDefault": .bool(isDefault),
+            "supportedReasoningEfforts": .array([
+                .object([
+                    "reasoningEffort": .string("medium"),
+                    "description": .string("Medium"),
+                ]),
+            ]),
+            "defaultReasoningEffort": .string("medium"),
+        ])
     }
 }

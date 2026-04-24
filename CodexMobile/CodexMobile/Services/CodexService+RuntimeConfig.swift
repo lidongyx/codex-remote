@@ -76,11 +76,19 @@ extension CodexService {
                 ?? []
 
             let decodedModels = items.compactMap { decodeModel(CodexModelOption.self, from: $0) }
-            availableModels = decodedModels
+            let configuredModelIdentifier = try? await configuredRuntimeModelIdentifier()
+            availableModels = mergedModelsWithConfiguredRuntimeModel(
+                decodedModels,
+                configuredModelIdentifier: configuredModelIdentifier
+            )
             modelsErrorMessage = nil
-            normalizeRuntimeSelectionsAfterModelsUpdate()
+            normalizeRuntimeSelectionsAfterModelsUpdate(
+                configuredModelIdentifier: configuredModelIdentifier
+            )
 
-            debugRuntimeLog("model/list success count=\(decodedModels.count)")
+            debugRuntimeLog(
+                "model/list success count=\(decodedModels.count) effective=\(availableModels.count)"
+            )
         } catch {
             handleModelListFailure(error)
             throw error
@@ -391,6 +399,57 @@ extension CodexService {
 }
 
 private extension CodexService {
+    func configuredRuntimeModelIdentifier() async throws -> String? {
+        let response = try await sendRequest(
+            method: "config/read",
+            params: .object([
+                "includeLayers": .bool(false),
+            ])
+        )
+
+        guard let resultObject = response.result?.objectValue else {
+            return nil
+        }
+
+        let configObject = resultObject["config"]?.objectValue ?? resultObject
+        let configuredModel = configObject["model"]?.stringValue?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        return configuredModel?.isEmpty == true ? nil : configuredModel
+    }
+
+    func mergedModelsWithConfiguredRuntimeModel(
+        _ models: [CodexModelOption],
+        configuredModelIdentifier: String?
+    ) -> [CodexModelOption] {
+        guard let configuredModelIdentifier = configuredModelIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !configuredModelIdentifier.isEmpty else {
+            return models
+        }
+
+        let hasConfiguredModel = models.contains {
+            $0.id == configuredModelIdentifier || $0.model == configuredModelIdentifier
+        }
+        guard !hasConfiguredModel else {
+            return models
+        }
+
+        var mergedModels = models
+        mergedModels.append(
+            CodexModelOption(
+                id: configuredModelIdentifier,
+                model: configuredModelIdentifier,
+                displayName: configuredModelIdentifier,
+                description: "Configured model from Codex runtime",
+                isDefault: false,
+                supportedReasoningEfforts: [],
+                defaultReasoningEffort: nil
+            )
+        )
+        return mergedModels
+    }
+
     // Centralizes thread-override mutation so empty records never linger in storage.
     func mutateThreadRuntimeOverride(
         for threadId: String,
@@ -414,10 +473,20 @@ private extension CodexService {
         persistThreadRuntimeOverrides()
     }
 
-    func normalizeRuntimeSelectionsAfterModelsUpdate() {
+    func normalizeRuntimeSelectionsAfterModelsUpdate(configuredModelIdentifier: String? = nil) {
         guard !availableModels.isEmpty else {
             persistRuntimeSelections()
             return
+        }
+
+        if let configuredModelIdentifier = configuredModelIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !configuredModelIdentifier.isEmpty,
+           let configuredModel = availableModels.first(where: {
+               $0.id == configuredModelIdentifier || $0.model == configuredModelIdentifier
+           }),
+           selectedModelOption(from: availableModels) == nil {
+            selectedModelId = configuredModel.id
         }
 
         let resolvedModel = selectedModelOption(from: availableModels) ?? fallbackModel(from: availableModels)

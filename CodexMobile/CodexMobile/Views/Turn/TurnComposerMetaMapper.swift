@@ -13,6 +13,9 @@ enum TurnComposerMetaMapper {
     // Returns models sorted using the explicit product order expected by the UI.
     nonisolated static func orderedModels(from models: [CodexModelOption]) -> [CodexModelOption] {
         let preferredOrder: [String] = [
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini",
             "gpt-5.1-codex-mini",
             "gpt-5.2",
             "gpt-5.1-codex-max",
@@ -36,6 +39,10 @@ enum TurnComposerMetaMapper {
     // Normalizes backend ids into consistent menu labels.
     nonisolated static func modelTitle(for model: CodexModelOption) -> String {
         switch model.model.lowercased() {
+        case "gpt-5.5":
+            return "GPT-5.5"
+        case "gpt-5.4-mini":
+            return "GPT-5.4-Mini"
         case "gpt-5.3-codex":
             return "GPT-5.3-Codex"
         case "gpt-5.2-codex":
