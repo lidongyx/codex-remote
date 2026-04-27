@@ -626,6 +626,31 @@ test("websocket relay forwards between mac and iphone on the base relay path", a
   });
 });
 
+test("websocket relay accepts browser role from query string", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-browser-role`, {
+      headers: { "x-role": "mac" },
+    });
+    const browserClient = new WebSocket(
+      `ws://127.0.0.1:${port}/relay/session-browser-role?role=iphone`
+    );
+
+    await Promise.all([onceOpen(mac), onceOpen(browserClient)]);
+
+    const received = new Promise((resolve) => {
+      browserClient.once("message", (value) => resolve(value.toString("utf8")));
+    });
+    mac.send(JSON.stringify({ ok: "browser-role" }));
+    assert.equal(await received, "{\"ok\":\"browser-role\"}");
+
+    const macClosed = onceClosed(mac);
+    const browserClosed = onceClosed(browserClient);
+    mac.close();
+    browserClient.close();
+    await Promise.all([macClosed, browserClosed]);
+  });
+});
+
 test("relay keeps the iPhone connected briefly but rejects new sends while the mac is absent", async () => {
   await withServer(async ({ port }) => {
     const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-grace`, {

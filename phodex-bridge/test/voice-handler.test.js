@@ -11,6 +11,8 @@ const { resolveRealtimeVoiceConfig } = require("../src/voice-handler");
 
 test("resolveRealtimeVoiceConfig returns Bailian realtime defaults when DASHSCOPE_API_KEY is present", () => {
   withEnv({
+    REMODEX_BAILIAN_REALTIME_API_KEY: "",
+    REMODEX_DASHSCOPE_API_KEY: "",
     DASHSCOPE_API_KEY: "dashscope-test-key",
     REMODEX_BAILIAN_REALTIME_URL: "",
     REMODEX_DASHSCOPE_REALTIME_URL: "",

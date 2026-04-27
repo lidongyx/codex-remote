@@ -58,7 +58,7 @@ function createRelayServer({
     const loggedPathname = redactRelayPathname(pathname);
     console.log(
       `[relay] upgrade request path=${loggedPathname} remote=${clientAddressKey(req, { trustProxy })} `
-      + `role=${readHeaderString(req.headers["x-role"]) || "missing"}`
+      + `role=${readHeaderString(req.headers["x-role"]) || readRelayRoleFromQuery(req.url) || "missing"}`
     );
     if (!pathname.startsWith("/relay/")) {
       console.log(`[relay] rejecting upgrade for non-relay path: ${loggedPathname}`);
@@ -87,6 +87,16 @@ function createRelayServer({
     wss,
     pushSessionService: resolvedPushSessionService,
   };
+}
+
+function readRelayRoleFromQuery(rawUrl) {
+  try {
+    const parsedUrl = new URL(rawUrl || "", "http://relay.local");
+    const role = parsedUrl.searchParams.get("role");
+    return role === "mac" || role === "iphone" ? role : "";
+  } catch {
+    return "";
+  }
 }
 
 async function handleHTTPRequest(req, res, {

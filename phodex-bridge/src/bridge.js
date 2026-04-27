@@ -37,6 +37,10 @@ const {
 } = require("./secure-device-state");
 const { createBridgeSecureTransport } = require("./secure-transport");
 const { createRolloutLiveMirrorController } = require("./rollout-live-mirror");
+const {
+  createLocalWebBootstrapServer,
+  normalizeLocalWebBootstrapConfig,
+} = require("./local-web-bootstrap");
 const { version: bridgePackageVersion = "" } = require("../package.json");
 const {
   MINIMUM_SUPPORTED_IOS_APP_VERSION,
@@ -340,6 +344,7 @@ function startBridge({
       shutdown(codex, () => socket, () => {
         isShuttingDown = true;
         bridgeWakeAssertion.stop();
+        localWebBootstrap.close();
         clearReconnectTimer();
         clearRelayWatchdog();
         clearBridgeStatusHeartbeat();
@@ -438,6 +443,16 @@ function startBridge({
     pairingPayload,
     pairingCode: createShortPairingCode({ length: SHORT_PAIRING_CODE_LENGTH }),
   };
+  const localWebBootstrap = createLocalWebBootstrapServer({
+    pairingSession,
+    getPairingSession() {
+      pairingSession.pairingPayload = secureTransport.createPairingPayload();
+      onPairingSession?.(pairingSession);
+      sendRelayRegistrationUpdate(deviceState);
+      return pairingSession;
+    },
+    ...normalizeLocalWebBootstrapConfig(process.env),
+  });
   onPairingSession?.(pairingSession);
   if (printPairingQr) {
     printQR(pairingSession);
@@ -472,6 +487,7 @@ function startBridge({
     });
     isShuttingDown = true;
     bridgeWakeAssertion.stop();
+    localWebBootstrap.close();
     clearReconnectTimer();
     stopContextUsageWatcher();
     rolloutLiveMirror?.stopAll();
@@ -486,6 +502,7 @@ function startBridge({
   process.on("SIGINT", () => shutdown(codex, () => socket, () => {
     isShuttingDown = true;
     bridgeWakeAssertion.stop();
+    localWebBootstrap.close();
     clearReconnectTimer();
     clearRelayWatchdog();
     clearBridgeStatusHeartbeat();
@@ -493,6 +510,7 @@ function startBridge({
   process.on("SIGTERM", () => shutdown(codex, () => socket, () => {
     isShuttingDown = true;
     bridgeWakeAssertion.stop();
+    localWebBootstrap.close();
     clearReconnectTimer();
     clearRelayWatchdog();
     clearBridgeStatusHeartbeat();

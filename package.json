@@ -17,7 +17,11 @@
     "dev:local": "./run-local-remodex.sh",
     "test:bridge": "npm --prefix phodex-bridge test",
     "test:relay": "npm --prefix relay test",
-    "test:node": "npm run test:bridge && npm run test:relay"
+    "test:node": "npm run test:bridge && npm run test:relay",
+    "web:dev": "npm --prefix web run dev",
+    "web:dev:lan": "npm --prefix web run dev:lan",
+    "web:build": "npm --prefix web run build",
+    "web:preview": "npm --prefix web run preview"
   },
   "engines": {
     "node": ">=18"

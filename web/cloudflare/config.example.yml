@@ -1,0 +1,13 @@
+tunnel: <tunnel-uuid>
+credentials-file: /etc/cloudflared/<tunnel-uuid>.json
+
+ingress:
+  - hostname: codex.example.com
+    path: /relay
+    service: http://host.docker.internal:9000
+  - hostname: codex.example.com
+    path: /local-web/*
+    service: http://host.docker.internal:8787
+  - hostname: codex.example.com
+    service: http://web:8080
+  - service: http_status:404

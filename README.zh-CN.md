@@ -14,6 +14,7 @@ Codex Remote 是一个本地优先的工作区，用于让 iPhone 连接 Codex�
 这个仓库目前包含：
 
 - 位于 `CodexMobile/` 的 iOS 客户端
+- 位于 `web/` 的浏览器客户端
 - 位于 `phodex-bridge/` 的本地 Node.js bridge
 - 位于 `relay/` 的可自托管 relay
 - 位于根目录 `package.json` 中的维护脚本
@@ -33,6 +34,7 @@ Codex Remote 是一个本地优先的工作区，用于让 iPhone 连接 Codex�
 - 已安装并可在 `PATH` 中访问的 [Codex CLI](https://github.com/openai/codex)
 - 如果要从源码构建 iOS App，需要 Xcode 16+
 - 需要一台 iPhone 用于真机配对和测试
+- 如果要通过 Cloudflare Tunnel 远程访问 Web 端，需要 Docker 和一个接入 Cloudflare 的域名
 
 ## 快速开始：连接方式 1 本地配对
 
@@ -129,6 +131,21 @@ npm run bridge:up
 
 Codex 执行、文件访问、shell 命令和 Git 操作仍然都发生在你的 Mac 本地。手机只是远程 UI。
 
+### 6. 使用 Remodex Web
+
+Remodex Web 是连接方式 1 的浏览器版本。它和 iOS App 一样连接本地 relay + bridge，同时仍然让 Codex 在你的 Mac 上执行。
+
+```sh
+npm install --prefix web
+npm run web:dev
+```
+
+然后打开 `http://127.0.0.1:5173/`。Web UI 会优先通过本地 bridge bootstrap endpoint 自动配对；如果不可用，也可以手动粘贴二维码里的 pairing payload JSON。
+
+在手机浏览器中，项目和 channel 列表会折叠为左侧滑动菜单，可通过 thread 标题左侧按钮呼出。
+
+完整 Web 用法、Docker、域名和 Cloudflare Tunnel 配置见 [Docs/WEB.zh-CN.md](Docs/WEB.zh-CN.md)。远程 Tunnel 方案仍然是本地优先：Cloudflare 只暴露你的本地 Web UI、relay 和 bridge bootstrap endpoint，Codex 仍然在你自己的机器上运行。
+
 ### Windows 使用注意
 
 - 如果 bridge 宿主机是 Windows，请使用 `npm run bridge:up` 或 `npm run bridge:run`，不要使用 `./run-local-remodex.sh`。
@@ -213,9 +230,10 @@ launchctl print gui/$(id -u)/com.remodex.bridge | sed -n '1,30p'
 ```text
 .
 ├── CodexMobile/          iOS App 源码和 Xcode 工程
+├── web/                  浏览器客户端和 Docker 打包
 ├── phodex-bridge/        本地 Node.js bridge 与 CLI 入口
 ├── relay/                可自托管的 WebSocket relay
-├── Docs/                 项目说明和补充文档
+├── Docs/                 项目说明，包含 Web 和 Tunnel 文档
 ├── package.json          bridge 与 relay 的根目录维护脚本
 └── run-local-remodex.sh  本地 relay + bridge 启动脚本
 ```

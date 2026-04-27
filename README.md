@@ -14,6 +14,7 @@ This repository focuses on local and self-hosted workflows. It does not assume a
 This repository currently contains:
 
 - an iOS client in `CodexMobile/`
+- a browser client in `web/`
 - a local Node.js bridge in `phodex-bridge/`
 - a self-hostable relay in `relay/`
 - root maintenance scripts in `package.json`
@@ -33,6 +34,7 @@ The intended flow is simple:
 - [Codex CLI](https://github.com/openai/codex) installed and available in `PATH`
 - Xcode 16+ if you want to build the iOS app from source
 - an iPhone for on-device pairing and testing
+- Docker and a Cloudflare-managed domain if you want remote Web access through Cloudflare Tunnel
 
 ## Quick Start: Method 1 Local Pairing
 
@@ -129,6 +131,21 @@ Once connected:
 
 Codex execution, file access, shell commands, and git operations still happen locally on the Mac. The phone is the remote UI.
 
+### 6. Use Remodex Web
+
+Remodex Web is the browser version of connection method 1. It connects to the same local relay + bridge path as the iOS app, while keeping Codex execution on your Mac.
+
+```sh
+npm install --prefix web
+npm run web:dev
+```
+
+Then open `http://127.0.0.1:5173/`. The Web UI auto-pairs through the local bridge bootstrap endpoint when available, or you can paste the QR pairing payload JSON manually.
+
+For phone browsers, the project/channel list collapses into a slide-out left menu opened from the button next to the thread title.
+
+For full Web usage, Docker, domain, and Cloudflare Tunnel setup, see [Docs/WEB.md](Docs/WEB.md). The remote Tunnel shape is still local-first: Cloudflare exposes your local Web UI, relay, and bridge bootstrap endpoint, but Codex runs on your own machine.
+
 ### Windows Note
 
 - If your bridge host is Windows, use `npm run bridge:up` or `npm run bridge:run` instead of `./run-local-remodex.sh`.
@@ -212,9 +229,10 @@ If you need to pair again, generate a fresh QR or pairing code from the same sou
 ```text
 .
 ├── CodexMobile/          iOS app source and Xcode project
+├── web/                  browser client and Docker packaging
 ├── phodex-bridge/        local Node.js bridge and CLI entrypoint
 ├── relay/                self-hostable WebSocket relay
-├── Docs/                 project notes and supplementary docs
+├── Docs/                 project notes, including Web and Tunnel docs
 ├── package.json          root scripts for bridge and relay maintenance
 └── run-local-remodex.sh  local launcher for relay + bridge
 ```

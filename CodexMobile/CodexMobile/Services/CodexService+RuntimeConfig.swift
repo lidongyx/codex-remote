@@ -86,8 +86,9 @@ extension CodexService {
                 configuredModelIdentifier: configuredModelIdentifier
             )
 
+            let modelIdentifiers = availableModels.map(\.model).joined(separator: ",")
             debugRuntimeLog(
-                "model/list success count=\(decodedModels.count) effective=\(availableModels.count) models=\(availableModels.map(\\.model).joined(separator: \",\"))"
+                "model/list success count=\(decodedModels.count) effective=\(availableModels.count) models=\(modelIdentifiers)"
             )
         } catch {
             handleModelListFailure(error)
@@ -416,7 +417,8 @@ private extension CodexService {
             in: .whitespacesAndNewlines
         )
         let normalizedModel = configuredModel?.isEmpty == true ? nil : configuredModel
-        debugRuntimeLog("config/read runtime model=\(normalizedModel ?? \"nil\")")
+        let configuredModelLogValue = normalizedModel ?? "nil"
+        debugRuntimeLog("config/read runtime model=\(configuredModelLogValue)")
         return normalizedModel
     }
 
@@ -451,8 +453,9 @@ private extension CodexService {
                 defaultReasoningEffort: capabilityTemplate?.defaultReasoningEffort
             )
         )
+        let capabilityTemplateModel = capabilityTemplate?.model ?? "none"
         debugRuntimeLog(
-            "runtime model injected from config/read model=\(configuredModelIdentifier) template=\(capabilityTemplate?.model ?? \"none\")"
+            "runtime model injected from config/read model=\(configuredModelIdentifier) template=\(capabilityTemplateModel)"
         )
         return mergedModels
     }
@@ -519,8 +522,10 @@ private extension CodexService {
             selectedReasoningEffort = nil
         }
 
+        let resolvedModelLogValue = resolvedModel?.model ?? "nil"
+        let resolvedReasoningLogValue = selectedReasoningEffort ?? "nil"
         debugRuntimeLog(
-            "runtime selection resolved model=\(resolvedModel?.model ?? \"nil\") reasoning=\(selectedReasoningEffort ?? \"nil\")"
+            "runtime selection resolved model=\(resolvedModelLogValue) reasoning=\(resolvedReasoningLogValue)"
         )
 
         persistRuntimeSelections()

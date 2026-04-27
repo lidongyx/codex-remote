@@ -52,7 +52,7 @@ function setupRelay(
   wss.on("connection", (ws, req) => {
     const urlPath = req.url || "";
     const match = urlPath.match(/^\/relay\/([^/?]+)/);
-    const role = req.headers["x-role"];
+    const role = resolveConnectionRole(req);
     const requestedSessionId = match?.[1];
     const sessionId = role === "iphone"
       ? resolveIphoneTargetSessionId(requestedSessionId)
@@ -189,6 +189,20 @@ function setupRelay(
       );
     });
   });
+}
+
+function resolveConnectionRole(req) {
+  const headerRole = readHeaderString(req.headers["x-role"]);
+  if (headerRole === "mac" || headerRole === "iphone") {
+    return headerRole;
+  }
+  try {
+    const parsedUrl = new URL(req.url || "", "http://relay.local");
+    const queryRole = parsedUrl.searchParams.get("role");
+    return queryRole === "mac" || queryRole === "iphone" ? queryRole : headerRole;
+  } catch {
+    return headerRole;
+  }
 }
 
 function scheduleCleanup(sessionId, { setTimeoutFn = setTimeout } = {}) {
