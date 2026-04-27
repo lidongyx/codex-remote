@@ -144,6 +144,10 @@ npm run web:dev
 
 在手机浏览器中，项目和 channel 列表会折叠为左侧滑动菜单，可通过 thread 标题左侧按钮呼出。
 
+下图展示了当前 Web 版本的呈现效果：
+
+![Remodex Web 版本呈现效果](assets/remodex-web-preview.png)
+
 完整 Web 用法、Docker、域名和 Cloudflare Tunnel 配置见 [Docs/WEB.zh-CN.md](Docs/WEB.zh-CN.md)。远程 Tunnel 方案仍然是本地优先：Cloudflare 只暴露你的本地 Web UI、relay 和 bridge bootstrap endpoint，Codex 仍然在你自己的机器上运行。
 
 ### Windows 使用注意

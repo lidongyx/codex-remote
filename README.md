@@ -144,6 +144,10 @@ Then open `http://127.0.0.1:5173/`. The Web UI auto-pairs through the local brid
 
 For phone browsers, the project/channel list collapses into a slide-out left menu opened from the button next to the thread title.
 
+The screenshot below shows the current Web version presentation:
+
+![Remodex Web version preview](assets/remodex-web-preview.png)
+
 For full Web usage, Docker, domain, and Cloudflare Tunnel setup, see [Docs/WEB.md](Docs/WEB.md). The remote Tunnel shape is still local-first: Cloudflare exposes your local Web UI, relay, and bridge bootstrap endpoint, but Codex runs on your own machine.
 
 ### Windows Note
