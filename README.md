@@ -1,10 +1,14 @@
 # Codex Remote
 
+![Remodex smart remote AI workspace preview](assets/remodex-hero.jpg)
+
 For a Simplified Chinese version of this guide, see [README.zh-CN.md](README.zh-CN.md).
 
 Codex Remote is a local-first workspace for controlling Codex from iPhone while keeping execution, git operations, and repository access on your own Mac.
 
 This repository focuses on local and self-hosted workflows. It does not assume a hosted production service or hardcoded public endpoint.
+
+Follow the project creator on X: [@lidongyx](https://x.com/lidongyx).
 
 > Note
 > The repository name is `codex-remote`, while some app names, CLI commands, package names, bundle identifiers, and internal paths still use `remodex` or `phodex`. Those compatibility names remain in place during the ongoing rename.

@@ -1,10 +1,14 @@
 # Codex Remote
 
+![Remodex 智能远程 AI 工作空间预览图](assets/remodex-hero.jpg)
+
 英文版请见 [README.md](README.md)。
 
 Codex Remote 是一个本地优先的工作区，用于让 iPhone 连接 Codex，同时把实际执行、Git 操作和仓库访问保留在你自己的 Mac 上。
 
 本仓库只面向本地运行和自托管场景，不预设托管服务，也不依赖硬编码公共服务地址。
+
+欢迎在 X 关注项目作者：[@lidongyx](https://x.com/lidongyx)。
 
 > 说明
 > 当前仓库名是 `codex-remote`，但部分 App 名称、CLI 命令、包名、Bundle Identifier 和内部路径仍保留 `remodex` 或 `phodex`。这些兼容性命名在重命名过程中会暂时继续保留。
