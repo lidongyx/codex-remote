@@ -127,12 +127,18 @@ function stopMacOSBridgeService({
   platform = process.platform,
   execFileSyncImpl = execFileSync,
   fsImpl = fs,
+  processImpl = process,
 } = {}) {
   assertDarwinPlatform(platform);
+  const previousStatus = readBridgeStatus({ env, fsImpl });
   bootoutLaunchAgent({
     env,
     execFileSyncImpl,
     ignoreMissing: true,
+  });
+  terminateRecordedBridgeProcess(previousStatus, {
+    execFileSyncImpl,
+    processImpl,
   });
   clearPairingSession({ env, fsImpl });
   clearBridgeStatus({ env, fsImpl });
@@ -154,6 +160,44 @@ function resetMacOSBridgePairing({
     fsImpl,
   });
   return resetBridgePairingImpl();
+}
+
+// Stops orphaned run-service processes left behind when launchd reports the job missing.
+function terminateRecordedBridgeProcess(status, {
+  execFileSyncImpl = execFileSync,
+  processImpl = process,
+} = {}) {
+  const pid = Number(status?.pid);
+  if (!Number.isInteger(pid) || pid <= 0 || pid === processImpl.pid) {
+    return false;
+  }
+
+  if (!isRecordedRemodexBridgeProcess(pid, { execFileSyncImpl })) {
+    return false;
+  }
+
+  try {
+    processImpl.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Checks the command line before killing so stale status files cannot target unrelated processes.
+function isRecordedRemodexBridgeProcess(pid, { execFileSyncImpl = execFileSync } = {}) {
+  try {
+    const command = execFileSyncImpl("ps", [
+      "-p",
+      String(pid),
+      "-o",
+      "command=",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return command.includes("remodex")
+      && command.includes("run-service");
+  } catch {
+    return false;
+  }
 }
 
 function getMacOSBridgeServiceStatus({
@@ -318,6 +362,11 @@ function restartLaunchAgent({
     "bootstrap",
     launchAgentDomain(env),
     plistPath,
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  execFileSyncImpl("launchctl", [
+    "kickstart",
+    "-k",
+    launchAgentLabelDomain(env),
   ], { stdio: ["ignore", "ignore", "pipe"] });
 }
 

@@ -4,7 +4,7 @@
 // Exports: SHORT_PAIRING_CODE_ALPHABET, SHORT_PAIRING_CODE_LENGTH, createShortPairingCode, printQR
 // Depends on: crypto, qrcode-terminal
 
-const { createHash, randomBytes } = require("crypto");
+const { randomBytes } = require("crypto");
 const qrcode = require("qrcode-terminal");
 
 const SHORT_PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -40,18 +40,14 @@ function normalizePairingSession(pairingSessionOrPayload) {
   };
 }
 
-function fingerprintSessionId(sessionId) {
-  const value = typeof sessionId === "string" ? sessionId.trim() : "";
-  if (!value) {
-    return "unavailable";
-  }
-
-  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
-}
-
-function printQR(pairingSessionOrPayload, { consoleImpl = console, qrcodeImpl = qrcode } = {}) {
+function printQR(pairingSessionOrPayload, options = {}) {
   const { pairingPayload, pairingCode } = normalizePairingSession(pairingSessionOrPayload);
   const payload = JSON.stringify(pairingPayload);
+  const sessionId = typeof pairingPayload?.sessionId === "string" ? pairingPayload.sessionId.trim() : "";
+  const sessionIdShort = sessionId.length > 12 ? `${sessionId.slice(0, 8)}…` : sessionId;
+  const env = options.env || process.env;
+  const consoleImpl = options.consoleImpl || console;
+  const qrcodeImpl = options.qrcodeImpl || qrcode;
 
   consoleImpl.log("\nScan this QR with the iPhone:\n");
   qrcodeImpl.generate(payload, { small: true });
@@ -59,15 +55,30 @@ function printQR(pairingSessionOrPayload, { consoleImpl = console, qrcodeImpl = 
     consoleImpl.log("Or paste this pairing code in the iPhone app:\n");
     consoleImpl.log(pairingCode);
   }
-  consoleImpl.log(`\nPairing Session: ${fingerprintSessionId(pairingPayload.sessionId)}`);
+  consoleImpl.log(`\nSession ID: ${sessionIdShort || "(none)"}`);
   consoleImpl.log(`Device ID: ${pairingPayload.macDeviceId}`);
   consoleImpl.log(`Expires: ${new Date(pairingPayload.expiresAt).toISOString()}\n`);
+
+  if (shouldPrintPairingJson({ env, explicitValue: options.printPairingJson })) {
+    // Opt-in only: this is the same bearer-like payload as the QR scan target.
+    consoleImpl.log("Pairing JSON (debug only; same sensitive bytes as the QR):\n");
+    consoleImpl.log(`${payload}\n`);
+  }
+}
+
+function shouldPrintPairingJson({ env = process.env, explicitValue } = {}) {
+  if (typeof explicitValue === "boolean") {
+    return explicitValue;
+  }
+
+  const rawValue = env?.REMODEX_PRINT_PAIRING_JSON || env?.PHODEX_PRINT_PAIRING_JSON || "";
+  return ["1", "true", "yes", "on"].includes(String(rawValue).trim().toLowerCase());
 }
 
 module.exports = {
   SHORT_PAIRING_CODE_ALPHABET,
   SHORT_PAIRING_CODE_LENGTH,
   createShortPairingCode,
-  fingerprintSessionId,
   printQR,
+  shouldPrintPairingJson,
 };

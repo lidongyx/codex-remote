@@ -551,54 +551,87 @@ final class CodexGPTAccountTests: XCTestCase {
         XCTAssertEqual(service.gptAccountSnapshot.planType, "plus")
     }
 
-    func testVoiceRealtimeConfigReportsDisconnectedWhenBridgeIsOffline() async {
+    func testVoiceTranscriptionPreflightRejectsOversizedClips() {
+        let preflight = CodexVoiceTranscriptionPreflight(
+            byteCount: CodexVoiceTranscriptionPreflight.maxByteCount + 1,
+            durationSeconds: 30
+        )
+
+        XCTAssertThrowsError(try preflight.validate()) { error in
+            XCTAssertEqual(error.localizedDescription, "Voice clips must be smaller than 10 MB.")
+        }
+    }
+
+    func testVoiceTranscriptionPreflightRejectsClipsLongerThanTwoMinutes() {
+        let preflight = CodexVoiceTranscriptionPreflight(
+            byteCount: 2_048,
+            durationSeconds: 120.5
+        )
+
+        XCTAssertThrowsError(try preflight.validate()) { error in
+            XCTAssertEqual(error.localizedDescription, "Voice clips must be 120 seconds or less.")
+        }
+    }
+
+    func testVoiceTranscriptionReportsDisconnectedInsteadOfLoginWhenBridgeIsOffline() async {
         let service = makeService()
         service.isConnected = false
+        service.gptAccountSnapshot = CodexGPTAccountSnapshot(
+            status: .authenticated,
+            authMethod: .chatgpt,
+            email: "voice@example.com",
+            displayName: nil,
+            planType: "plus",
+            loginInFlight: false,
+            needsReauth: false,
+            expiresAt: nil,
+            tokenReady: true,
+            updatedAt: .now
+        )
 
         await XCTAssertThrowsErrorAsync({
-            _ = try await service.resolveRealtimeVoiceConfig()
+            try await service.transcribeVoiceAudioFile(
+                at: URL(fileURLWithPath: "/tmp/remodex-voice-test.wav"),
+                durationSeconds: 1
+            )
         }) { error in
             XCTAssertEqual(error.localizedDescription, "Connect to your Mac before using voice transcription.")
         }
     }
 
-    func testVoiceRealtimeConfigDecodesBridgePayload() async throws {
+    func testVoiceTranscriptionUsesBridgeResolvedTokenForDirectUpload() async throws {
         let service = makeService()
         service.isConnected = true
+        let clipURL = try makeTemporaryVoiceClipURL()
+        defer { try? FileManager.default.removeItem(at: clipURL) }
+        let expectedAudio = makeTestWavData()
+        let expectedToken = "chatgpt-token-123"
 
         var observedMethod: String?
+        var observedParams: JSONValue?
         service.requestTransportOverride = { method, params in
             observedMethod = method
-            XCTAssertNil(params)
+            observedParams = params
             return RPCMessage(
                 id: .string(UUID().uuidString),
                 result: .object([
-                    "provider": .string("bailian_realtime"),
-                    "websocketURL": .string("wss://dashscope.aliyuncs.com/api-ws/v1/realtime"),
-                    "apiKey": .string("dashscope-test-key"),
-                    "model": .string("qwen3-asr-flash-realtime"),
-                    "language": .string("zh"),
-                    "inputSampleRateHz": .integer(16_000),
-                    "inputEncoding": .string("pcm16"),
-                    "vadSilenceDurationMs": .integer(400),
-                    "vadThreshold": .double(0.5),
+                    "token": .string(expectedToken),
                 ]),
                 includeJSONRPC: false
             )
         }
+        GPTVoiceTranscriptionManager.transcribeOverride = { wavData, token in
+            XCTAssertEqual(wavData, expectedAudio)
+            XCTAssertEqual(token, expectedToken)
+            return "transcribed on phone"
+        }
+        defer { GPTVoiceTranscriptionManager.transcribeOverride = nil }
 
-        let config = try await service.resolveRealtimeVoiceConfig()
+        let transcript = try await service.transcribeVoiceAudioFile(at: clipURL, durationSeconds: 1.25)
 
-        XCTAssertEqual(observedMethod, "voice/realtimeConfig")
-        XCTAssertEqual(config.provider, "bailian_realtime")
-        XCTAssertEqual(config.websocketURL.absoluteString, "wss://dashscope.aliyuncs.com/api-ws/v1/realtime")
-        XCTAssertEqual(config.apiKey, "dashscope-test-key")
-        XCTAssertEqual(config.model, "qwen3-asr-flash-realtime")
-        XCTAssertEqual(config.language, "zh")
-        XCTAssertEqual(config.inputSampleRateHz, 16_000)
-        XCTAssertEqual(config.inputEncoding, "pcm16")
-        XCTAssertEqual(config.vadSilenceDurationMs, 400)
-        XCTAssertEqual(config.vadThreshold, 0.5)
+        XCTAssertEqual(transcript, "transcribed on phone")
+        XCTAssertEqual(observedMethod, "voice/resolveAuth")
+        XCTAssertNil(observedParams)
     }
 
     func testUnsupportedVoiceBridgeAuthMarksBridgeSessionAsUnsupported() {
@@ -606,7 +639,7 @@ final class CodexGPTAccountTests: XCTestCase {
         let error = CodexServiceError.rpcError(
             RPCError(
                 code: -32600,
-                message: "Invalid request: unknown variant `voice/realtimeConfig`, expected one of `initialize`, `thread/start`"
+                message: "Invalid request: unknown variant `voice/resolveAuth`, expected one of `initialize`, `thread/start`"
             )
         )
 
@@ -615,14 +648,53 @@ final class CodexGPTAccountTests: XCTestCase {
         XCTAssertEqual(service.classifyVoiceFailure(error), .bridgeSessionUnsupported)
     }
 
-    func testResolvedVoiceRecoveryReturnsLatestReasonVerbatim() {
+    func testResolvedVoiceRecoveryClearsBannerOnceVoiceAuthIsHealthy() {
         let service = makeService()
-        let reason = CodexVoiceFailureReason.providerSpecific(
-            summary: "请先在 Mac 上配置百炼实时听写。",
-            detail: "先在本地 bridge 环境里设置 `DASHSCOPE_API_KEY`，然后重新连接后再试。"
+        service.gptAccountSnapshot = CodexGPTAccountSnapshot(
+            status: .authenticated,
+            authMethod: .chatgpt,
+            email: "voice@example.com",
+            displayName: nil,
+            planType: "plus",
+            loginInFlight: false,
+            needsReauth: false,
+            expiresAt: nil,
+            tokenReady: true,
+            updatedAt: .now
         )
 
-        XCTAssertEqual(service.resolveVoiceRecoveryReason(reason), reason)
+        XCTAssertNil(service.resolveVoiceRecoveryReason(.voiceSyncInProgress))
+        XCTAssertNil(service.resolveVoiceRecoveryReason(.macLoginRequired))
+        XCTAssertNil(service.resolveVoiceRecoveryReason(.macReauthenticationRequired))
+    }
+
+    func testVoiceMissingTokenWhileAuthenticatedIsClassifiedAsSyncing() {
+        let service = makeService()
+        service.gptAccountSnapshot = CodexGPTAccountSnapshot(
+            status: .authenticated,
+            authMethod: .chatgpt,
+            email: "voice@example.com",
+            displayName: nil,
+            planType: "plus",
+            loginInFlight: false,
+            needsReauth: false,
+            expiresAt: nil,
+            tokenReady: false,
+            tokenUnavailableSince: .now,
+            updatedAt: .now
+        )
+
+        let error = CodexServiceError.rpcError(
+            RPCError(
+                code: -32000,
+                message: "No ChatGPT session token available. Sign in to ChatGPT on the Mac.",
+                data: .object([
+                    "errorCode": .string("token_missing"),
+                ])
+            )
+        )
+
+        XCTAssertEqual(service.classifyVoiceFailure(error), .voiceSyncInProgress)
     }
 
     func testVoiceAuthUnavailableIsClassifiedAsReconnectRequired() {
@@ -638,27 +710,6 @@ final class CodexGPTAccountTests: XCTestCase {
         )
 
         XCTAssertEqual(service.classifyVoiceFailure(error), .reconnectRequired)
-    }
-
-    func testVoiceRealtimeConfigMissingUsesSpecificRecoveryReason() {
-        let service = makeService()
-        let error = CodexServiceError.rpcError(
-            RPCError(
-                code: -32000,
-                message: "Configure DASHSCOPE_API_KEY on the paired Mac before using Bailian realtime dictation.",
-                data: .object([
-                    "errorCode": .string("realtime_config_missing"),
-                ])
-            )
-        )
-
-        XCTAssertEqual(
-            service.classifyVoiceFailure(error),
-            .providerSpecific(
-                summary: "请先在 Mac 上配置百炼实时听写。",
-                detail: "先在本地 bridge 环境里设置 `DASHSCOPE_API_KEY`，然后重新连接后再试。"
-            )
-        )
     }
 
     func testSuccessfulLoginKeepsPollingUntilVoiceTokenIsReady() async throws {
@@ -746,6 +797,38 @@ final class CodexGPTAccountTests: XCTestCase {
         }
     }
 
+    private func makeTemporaryVoiceClipURL() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        try makeTestWavData().write(to: url)
+        return url
+    }
+
+    private func makeTestWavData() -> Data {
+        let sampleRate = 24_000
+        let sampleCount = sampleRate / 4
+        let pcmData = Data(repeating: 0, count: sampleCount * 2)
+        let dataSize = UInt32(pcmData.count)
+
+        var wav = Data()
+        wav.append(contentsOf: "RIFF".utf8)
+        wav.appendLE(UInt32(36 + dataSize))
+        wav.append(contentsOf: "WAVE".utf8)
+        wav.append(contentsOf: "fmt ".utf8)
+        wav.appendLE(UInt32(16))
+        wav.appendLE(UInt16(1))
+        wav.appendLE(UInt16(1))
+        wav.appendLE(UInt32(sampleRate))
+        wav.appendLE(UInt32(sampleRate * 2))
+        wav.appendLE(UInt16(2))
+        wav.appendLE(UInt16(16))
+        wav.append(contentsOf: "data".utf8)
+        wav.appendLE(dataSize)
+        wav.append(pcmData)
+        return wav
+    }
+
     private func XCTAssertThrowsErrorAsync<T>(
         _ expression: () async throws -> T,
         _ errorHandler: (Error) -> Void
@@ -755,6 +838,15 @@ final class CodexGPTAccountTests: XCTestCase {
             XCTFail("Expected expression to throw")
         } catch {
             errorHandler(error)
+        }
+    }
+}
+
+private extension Data {
+    mutating func appendLE<T: FixedWidthInteger>(_ value: T) {
+        var littleEndian = value.littleEndian
+        Swift.withUnsafeBytes(of: &littleEndian) { rawBuffer in
+            append(contentsOf: rawBuffer.bindMemory(to: UInt8.self))
         }
     }
 }

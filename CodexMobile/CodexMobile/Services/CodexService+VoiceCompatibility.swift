@@ -1,5 +1,5 @@
 // FILE: CodexService+VoiceCompatibility.swift
-// Purpose: Maps Bailian realtime voice failures into stable recovery reasons the UI can present cleanly.
+// Purpose: Maps voice-mode runtime failures into stable recovery reasons the UI can present cleanly.
 // Layer: Service
 // Exports: CodexVoiceFailureReason, CodexService voice compatibility helpers
 // Depends on: Foundation, CodexServiceError, GPTVoiceTranscriptionError
@@ -9,15 +9,18 @@ import Foundation
 enum CodexVoiceFailureReason: Equatable {
     case reconnectRequired
     case bridgeSessionUnsupported
+    case macLoginRequired
+    case macReauthenticationRequired
+    case voiceSyncInProgress
+    case chatGPTRequired
     case microphonePermissionRequired
     case microphoneUnavailable
     case recorderUnavailable
-    case providerSpecific(summary: String, detail: String)
     case generic(String)
 }
 
 extension CodexService {
-    // Learns that this bridge predates the Bailian realtime voice RPC so future mic taps can short-circuit immediately.
+    // Learns that this bridge predates the bridge-owned voice RPCs so future mic taps can short-circuit immediately.
     func consumeUnsupportedVoiceBridgeAuth(_ error: Error) -> Bool {
         guard shouldTreatAsUnsupportedVoiceBridgeAuth(error) else {
             return false
@@ -27,7 +30,7 @@ extension CodexService {
         return true
     }
 
-    // Normalizes voice failures from the recorder, bridge RPC, and Bailian realtime session into UI-friendly buckets.
+    // Normalizes voice failures from the recorder, bridge RPC, and transcription API into UI-friendly buckets.
     func classifyVoiceFailure(_ error: Error) -> CodexVoiceFailureReason {
         if !supportsBridgeVoiceAuth || shouldTreatAsUnsupportedVoiceBridgeAuth(error) {
             return .bridgeSessionUnsupported
@@ -35,10 +38,6 @@ extension CodexService {
 
         if let voiceError = error as? GPTVoiceTranscriptionError {
             return classifyVoiceFailure(voiceError)
-        }
-
-        if let realtimeVoiceError = error as? BailianRealtimeVoiceError {
-            return classifyVoiceFailure(realtimeVoiceError)
         }
 
         guard let serviceError = error as? CodexServiceError else {
@@ -78,9 +77,12 @@ extension CodexService {
             || message.contains("does not support")
             || message.contains("unknown variant")
             || message.contains("expected one of")
-        let mentionsBridgeVoiceMethod = message.contains("voice/realtimeconfig")
-            || message.contains("voice realtimeconfig")
-            || message.contains("voice/realtimeconfig`")
+        let mentionsBridgeVoiceMethod = message.contains("voice/resolveauth")
+            || message.contains("voice resolveauth")
+            || message.contains("voice/resolveauth`")
+            || message.contains("voice/transcribe")
+            || message.contains("voice transcribe")
+            || message.contains("voice/transcribe`")
 
         guard rpcError.code == -32600 || rpcError.code == -32602 || rpcError.code == -32000 else {
             return mentionsUnsupportedRequest && mentionsBridgeVoiceMethod
@@ -97,33 +99,14 @@ extension CodexService {
             return .microphoneUnavailable
         case .unableToConfigureAudioSession,
              .unableToPrepareAudioEngine,
+             .unableToCreateOutputFile,
              .alreadyRecording,
              .notRecording:
             return .recorderUnavailable
+        case .authExpired:
+            return .macReauthenticationRequired
         case .transcriptionFailed(let message):
             return classifyVoiceFailureMessage(message)
-        }
-    }
-
-    private func classifyVoiceFailure(_ error: BailianRealtimeVoiceError) -> CodexVoiceFailureReason {
-        switch error {
-        case .invalidConfiguration:
-            return .providerSpecific(
-                summary: L10n.string("Bailian realtime dictation configuration is invalid."),
-                detail: error.localizedDescription
-            )
-        case .authenticationFailed:
-            return .providerSpecific(
-                summary: L10n.string("Bailian realtime dictation authentication failed."),
-                detail: error.localizedDescription
-            )
-        case .serverRejected:
-            return .providerSpecific(
-                summary: L10n.string("Bailian realtime dictation rejected this session."),
-                detail: error.localizedDescription
-            )
-        case .connectionFailed, .invalidServerResponse:
-            return .generic(error.localizedDescription)
         }
     }
 
@@ -132,29 +115,63 @@ extension CodexService {
         switch bridgeErrorCode {
         case "auth_unavailable":
             return .reconnectRequired
-        case "realtime_config_missing":
-            return .providerSpecific(
-                summary: L10n.string("Set up Bailian realtime on your Mac to use voice mode."),
-                detail: L10n.string("Configure `DASHSCOPE_API_KEY` on the paired Mac bridge, then come back here and try again.")
-            )
+        case "token_missing", "not_authenticated":
+            return classifyMissingVoiceTokenState()
+        case "not_chatgpt":
+            return .chatGPTRequired
         default:
             return nil
         }
     }
 
-    // Voice recovery is no longer tied to ChatGPT/API auth state; keep the latest reason verbatim.
+    private func classifyMissingVoiceTokenState() -> CodexVoiceFailureReason {
+        if gptAccountSnapshot.needsReauth || gptAccountSnapshot.status == .expired {
+            return .macReauthenticationRequired
+        }
+
+        if gptAccountSnapshot.isAuthenticated && !gptAccountSnapshot.isVoiceTokenReady {
+            return .voiceSyncInProgress
+        }
+
+        if gptAccountSnapshot.hasActiveLogin
+            || gptAccountSnapshot.status == .notLoggedIn
+            || gptAccountSnapshot.status == .unknown {
+            return .macLoginRequired
+        }
+
+        return .chatGPTRequired
+    }
+
+    // Clears auth-driven recovery once the refreshed snapshot is healthy again.
+    // used by: TurnView voice recovery banner
+    private func resolveAuthSensitiveVoiceRecoveryReason() -> CodexVoiceFailureReason? {
+        guard !gptAccountSnapshot.isAuthenticated || !gptAccountSnapshot.isVoiceTokenReady else {
+            return nil
+        }
+
+        return classifyMissingVoiceTokenState()
+    }
+
+    // Re-derives auth-sensitive voice recovery from the latest bridge snapshot so stale
+    // in-flight refreshes do not leave the banner stuck on the wrong instruction.
     func resolveVoiceRecoveryReason(_ reason: CodexVoiceFailureReason) -> CodexVoiceFailureReason? {
-        reason
+        switch reason {
+        case .macLoginRequired, .macReauthenticationRequired, .voiceSyncInProgress:
+            return resolveAuthSensitiveVoiceRecoveryReason()
+        default:
+            return reason
+        }
     }
 
     private func classifyVoiceFailureMessage(_ message: String) -> CodexVoiceFailureReason {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return .generic(L10n.string("Voice transcription failed."))
+            return .generic("Voice transcription failed.")
         }
 
         let normalized = trimmed.lowercased()
-        if normalized.contains("voice/realtimeconfig") && normalized.contains("unknown variant") {
+        if (normalized.contains("voice/resolveauth") || normalized.contains("voice/transcribe"))
+            && normalized.contains("unknown variant") {
             return .bridgeSessionUnsupported
         }
         if normalized.contains("connect to your mac before using voice transcription")
@@ -174,13 +191,20 @@ extension CodexService {
             || normalized.contains("unable to create the temporary audio file") {
             return .recorderUnavailable
         }
-        if normalized.contains("dashscope_api_key")
-            || normalized.contains("bailian realtime")
-            || normalized.contains("百炼") {
-            return .providerSpecific(
-                summary: L10n.string("Set up Bailian realtime on your Mac to use voice mode."),
-                detail: trimmed
-            )
+        if normalized.contains("chatgpt login has expired")
+            || normalized.contains("fresh sign-in")
+            || normalized.contains("sign in again") {
+            return .macReauthenticationRequired
+        }
+        if normalized.contains("waiting for voice sync") {
+            return .voiceSyncInProgress
+        }
+        if normalized.contains("sign in to chatgpt")
+            || normalized.contains("no chatgpt session token") {
+            return classifyMissingVoiceTokenState()
+        }
+        if normalized.contains("requires a chatgpt account") {
+            return .chatGPTRequired
         }
 
         return .generic(trimmed)

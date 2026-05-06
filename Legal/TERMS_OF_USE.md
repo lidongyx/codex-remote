@@ -61,7 +61,7 @@ The App also relies on third-party services, including:
 
 - **Apple** for App Store billing, subscriptions, and platform services
 - **RevenueCat** for subscription/entitlement handling
-- **Configured voice transcription providers** such as Alibaba Cloud Bailian or OpenAI / ChatGPT when you use voice mode, depending on your paired Mac's local setup
+- **OpenAI / ChatGPT** for voice transcription when you use voice mode through your paired Mac's local bridge authentication
 
 Your use of those services may also be subject to their own terms and privacy policies.
 

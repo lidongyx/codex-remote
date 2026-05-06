@@ -6,10 +6,10 @@
 
 const { execFile } = require("child_process");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { promisify } = require("util");
 const { findRolloutFileForThread, resolveSessionsRoot } = require("./rollout-watch");
+const { projectListDirectory } = require("./project-handler");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_BUNDLE_ID = "com.openai.codex";
@@ -21,6 +21,8 @@ const DEFAULT_APP_BOOT_WAIT_MS = 1_200;
 const DEFAULT_THREAD_MATERIALIZE_WAIT_MS = 4_000;
 const DEFAULT_THREAD_MATERIALIZE_POLL_MS = 250;
 const DEFAULT_WAKE_DISPLAY_DURATION_SECONDS = 30;
+const WINDOWS_BOUNCE_URL = "codex://settings";
+const DESKTOP_THREAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 
 function handleDesktopRequest(rawMessage, sendResponse, options = {}) {
   let parsed;
@@ -65,7 +67,6 @@ async function handleDesktopMethod(method, params, options = {}) {
   const executor = options.executor || execFileAsync;
   const env = options.env || process.env;
   const fsModule = options.fsModule || fs;
-  const osModule = options.osModule || os;
   const isAppRunning = options.isAppRunning || null;
   const sleepFn = options.sleepFn || sleep;
   const appBootWaitMs = options.appBootWaitMs ?? DEFAULT_APP_BOOT_WAIT_MS;
@@ -73,16 +74,39 @@ async function handleDesktopMethod(method, params, options = {}) {
   const threadMaterializeWaitMs = options.threadMaterializeWaitMs ?? DEFAULT_THREAD_MATERIALIZE_WAIT_MS;
   const threadMaterializePollMs = options.threadMaterializePollMs ?? DEFAULT_THREAD_MATERIALIZE_POLL_MS;
 
-  if (platform !== "darwin") {
-    throw desktopError(
-      "unsupported_platform",
-      "Mac handoff is only available when the bridge is running on macOS."
-    );
-  }
-
   switch (method) {
+    case "desktop/continueOnDesktop":
+      if (platform !== "darwin" && platform !== "win32") {
+        throw desktopError(
+          "unsupported_platform",
+          "Desktop handoff is only available when the bridge is running on macOS or Windows."
+        );
+      }
+
+      return continueOnDesktop(params, {
+        platform,
+        bundleId,
+        appPath,
+        executor,
+        env,
+        fsModule,
+        isAppRunning,
+        sleepFn,
+        appBootWaitMs,
+        relaunchWaitMs,
+        threadMaterializeWaitMs,
+        threadMaterializePollMs,
+      });
     case "desktop/continueOnMac":
-      return continueOnMac(params, {
+      if (platform !== "darwin") {
+        throw desktopError(
+          "unsupported_platform",
+          "Mac handoff is only available when the bridge is running on macOS."
+        );
+      }
+
+      return continueOnDesktop(params, {
+        platform,
         bundleId,
         appPath,
         executor,
@@ -104,27 +128,117 @@ async function handleDesktopMethod(method, params, options = {}) {
     case "desktop/preferences/update":
       return updateBridgePreferences(params, options);
     case "desktop/filesystem/listDirectory":
-      return listLocalDirectory(params, { fsModule, osModule });
+      return listDesktopFilesystemDirectory(params, options);
     default:
       throw desktopError("unknown_method", `Unknown desktop method: ${method}`);
   }
 }
 
-function listLocalDirectory(params, { fsModule, osModule }) {
-  const directoryPath = resolveDirectoryPath(params, { fsModule, osModule });
-  const children = readChildDirectories(directoryPath, { fsModule });
+// Backward-compatible folder browser endpoint kept for older iOS flows. New
+// project picking uses project/listDirectory, but this shape is still consumed
+// by DesktopFilesystemService in the local app.
+async function listDesktopFilesystemDirectory(params, options = {}) {
+  try {
+    const homeDir = options.osModule?.homedir?.() || options.homeDir || require("os").homedir();
+    const listing = await legacyProjectListDirectory(params, {
+      fsModule: options.fsModule,
+      homeDir,
+    });
+
+    return {
+      directory: desktopDirectoryDescriptor(listing.path, homeDir),
+      parentDirectory: listing.parentPath
+        ? desktopDirectoryDescriptor(listing.parentPath, homeDir)
+        : null,
+      children: listing.entries.map((entry) => desktopDirectoryDescriptor(entry.path, homeDir, entry.name)),
+    };
+  } catch (error) {
+    throw desktopError(
+      mapProjectErrorCodeToDesktopFilesystemCode(error?.errorCode),
+      error?.userMessage || error?.message || "Unable to read that folder.",
+      error
+    );
+  }
+}
+
+async function legacyProjectListDirectory(params, options = {}) {
+  if (!options.fsModule) {
+    return projectListDirectory(params, {
+      homeDir: options.homeDir,
+    });
+  }
+
+  const fsModule = options.fsModule;
+  const homeDir = options.homeDir;
+  const requestedPath = typeof params?.path === "string" && params.path.trim()
+    ? params.path.trim()
+    : homeDir;
+  if (!fsModule.existsSync(requestedPath)) {
+    throw desktopError("directory_not_found", "That folder does not exist on this Mac.");
+  }
+
+  const stats = fsModule.statSync(requestedPath);
+  if (!stats.isDirectory()) {
+    throw desktopError("not_directory", "That path is not a folder.");
+  }
+
+  const directoryPath = fsModule.realpathSync ? fsModule.realpathSync(requestedPath) : requestedPath;
+  const children = [];
+  for (const dirent of fsModule.readdirSync(directoryPath, { withFileTypes: true })) {
+    if (!dirent.isDirectory() || dirent.name.startsWith(".")) {
+      continue;
+    }
+    const childPath = path.join(directoryPath, dirent.name);
+    const childStats = fsModule.statSync(childPath);
+    if (!childStats.isDirectory()) {
+      continue;
+    }
+    const realChildPath = fsModule.realpathSync ? fsModule.realpathSync(childPath) : childPath;
+    children.push({
+      name: dirent.name,
+      path: realChildPath,
+    });
+  }
+
+  children.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
 
   return {
-    directory: buildDirectoryDescriptor(directoryPath, { fsModule, osModule }),
-    parentDirectory: buildParentDirectoryDescriptor(directoryPath, { fsModule, osModule }),
-    children,
+    path: directoryPath,
+    parentPath: path.dirname(directoryPath) === directoryPath ? null : path.dirname(directoryPath),
+    entries: children,
   };
 }
 
-// Waits for fresh phone-authored chats to materialize locally before deep-linking them on Mac.
-async function continueOnMac(
+function desktopDirectoryDescriptor(directoryPath, homeDir, displayName = null) {
+  const isHomeDirectory = path.resolve(directoryPath) === path.resolve(homeDir);
+  const isRootDirectory = path.dirname(directoryPath) === directoryPath;
+  return {
+    path: directoryPath,
+    name: isHomeDirectory ? "Home" : (displayName || path.basename(directoryPath) || directoryPath),
+    isHomeDirectory,
+    isRootDirectory,
+  };
+}
+
+function mapProjectErrorCodeToDesktopFilesystemCode(errorCode) {
+  switch (errorCode) {
+    case "missing_directory":
+      return "directory_not_found";
+    case "not_directory":
+    case "path_not_allowed":
+    case "invalid_path":
+    case "missing_path":
+      return errorCode;
+    default:
+      return errorCode || "filesystem_error";
+  }
+}
+
+// Waits for fresh phone-authored chats to materialize locally before deep-linking them on desktop.
+async function continueOnDesktop(
   params,
   {
+    platform,
     bundleId,
     appPath,
     executor,
@@ -140,11 +254,53 @@ async function continueOnMac(
 ) {
   const threadId = resolveThreadId(params);
   if (!threadId) {
-    throw desktopError("missing_thread_id", "A thread id is required to continue on Mac.");
+    throw desktopError("missing_thread_id", "A thread id is required to continue on desktop.");
+  }
+  if (!isValidDesktopThreadId(threadId)) {
+    throw desktopError("invalid_thread_id", "The requested desktop thread id is not valid.");
   }
 
   const targetUrl = `codex://threads/${threadId}`;
   const desktopKnown = isThreadLikelyKnownOnDesktop(threadId, { env, fsModule });
+
+  if (platform === "win32") {
+    try {
+      if (desktopKnown) {
+        await refreshWindowsCodex(targetUrl, {
+          executor,
+          env,
+          sleepFn,
+          settleMs: relaunchWaitMs,
+        });
+      } else {
+        await openWindowsDeepLink(WINDOWS_BOUNCE_URL, { executor, env });
+        await sleepFn(appBootWaitMs);
+        await waitForThreadMaterialization(threadId, {
+          env,
+          fsModule,
+          sleepFn,
+          timeoutMs: threadMaterializeWaitMs,
+          pollMs: threadMaterializePollMs,
+        });
+        await openWindowsDeepLink(targetUrl, { executor, env });
+      }
+    } catch (error) {
+      throw desktopError(
+        "handoff_failed",
+        "Could not open Codex on this PC.",
+        error
+      );
+    }
+
+    return {
+      success: true,
+      relaunched: false,
+      targetUrl,
+      threadId,
+      desktopKnown,
+    };
+  }
+
   const appRunning = typeof isAppRunning === "function"
     ? await isAppRunning(appPath)
     : await detectRunningCodexApp(appPath, executor);
@@ -307,185 +463,6 @@ async function updateBridgePreferences(params, options = {}) {
   });
 }
 
-function resolveDirectoryPath(params, { fsModule, osModule }) {
-  const requestedPath = firstNonEmptyString([
-    params?.path,
-    params?.directoryPath,
-    params?.directory_path,
-  ]);
-  const defaultPath = osModule.homedir();
-  const expandedPath = expandHomePath(requestedPath || defaultPath, osModule);
-  const absolutePath = path.isAbsolute(expandedPath)
-    ? expandedPath
-    : path.resolve(defaultPath, expandedPath);
-  const normalizedPath = realpathIfPossible(absolutePath, fsModule);
-
-  if (!fsModule.existsSync(normalizedPath)) {
-    throw desktopError(
-      "directory_not_found",
-      "That folder is not available on this Mac."
-    );
-  }
-
-  if (!isDirectoryPath(normalizedPath, fsModule)) {
-    throw desktopError(
-      "not_a_directory",
-      "The selected path is not a folder."
-    );
-  }
-
-  return normalizedPath;
-}
-
-function readChildDirectories(directoryPath, { fsModule }) {
-  let entries;
-  try {
-    entries = fsModule.readdirSync(directoryPath, { withFileTypes: true });
-  } catch (error) {
-    throw desktopError(
-      "directory_read_failed",
-      "Could not read that folder on this Mac.",
-      error
-    );
-  }
-
-  return entries
-    .map((entry) => normalizeDirectoryEntry(entry, directoryPath, fsModule))
-    .filter((entry) => entry && entry.isDirectory && !entry.isHidden)
-    .map((entry) => buildDirectoryDescriptor(entry.path, { fsModule }))
-    .sort(compareDirectoryDescriptors);
-}
-
-function normalizeDirectoryEntry(entry, directoryPath, fsModule) {
-  if (!entry) {
-    return null;
-  }
-
-  if (typeof entry === "string") {
-    const entryPath = path.join(directoryPath, entry);
-    return {
-      name: entry,
-      path: entryPath,
-      isDirectory: isDirectoryPath(entryPath, fsModule),
-      isHidden: entry.startsWith("."),
-    };
-  }
-
-  const name = typeof entry.name === "string" ? entry.name : "";
-  if (!name) {
-    return null;
-  }
-
-  const entryPath = path.join(directoryPath, name);
-  const isDirectory = typeof entry.isDirectory === "function"
-    ? entry.isDirectory()
-    : isDirectoryPath(entryPath, fsModule);
-
-  return {
-    name,
-    path: entryPath,
-    isDirectory,
-    isHidden: name.startsWith("."),
-  };
-}
-
-function buildDirectoryDescriptor(directoryPath, { fsModule, osModule } = {}) {
-  const normalizedPath = realpathIfPossible(directoryPath, fsModule || fs);
-  const homePath = osModule?.homedir?.() || null;
-  return {
-    path: normalizedPath,
-    name: directoryDisplayName(normalizedPath, homePath),
-    isHomeDirectory: !!homePath && samePath(normalizedPath, homePath),
-    isRootDirectory: path.dirname(normalizedPath) === normalizedPath,
-  };
-}
-
-function buildParentDirectoryDescriptor(directoryPath, { fsModule, osModule }) {
-  const parentPath = path.dirname(directoryPath);
-  if (parentPath === directoryPath) {
-    return null;
-  }
-
-  return buildDirectoryDescriptor(parentPath, { fsModule, osModule });
-}
-
-function directoryDisplayName(directoryPath, homePath = null) {
-  if (homePath && samePath(directoryPath, homePath)) {
-    return "Home";
-  }
-
-  const baseName = path.basename(directoryPath);
-  return baseName || directoryPath;
-}
-
-function compareDirectoryDescriptors(left, right) {
-  if (!!left.isHidden !== !!right.isHidden) {
-    return left.isHidden ? 1 : -1;
-  }
-
-  return left.name.localeCompare(right.name, undefined, {
-    sensitivity: "base",
-    numeric: true,
-  });
-}
-
-function expandHomePath(value, osModule) {
-  if (typeof value !== "string") {
-    return osModule.homedir();
-  }
-
-  if (value === "~") {
-    return osModule.homedir();
-  }
-
-  if (value.startsWith("~/")) {
-    return path.join(osModule.homedir(), value.slice(2));
-  }
-
-  return value;
-}
-
-function realpathIfPossible(targetPath, fsModule) {
-  try {
-    if (typeof fsModule.realpathSync?.native === "function") {
-      return fsModule.realpathSync.native(targetPath);
-    }
-    if (typeof fsModule.realpathSync === "function") {
-      return fsModule.realpathSync(targetPath);
-    }
-  } catch {
-    // Fall back to the requested path below; existence is checked separately.
-  }
-
-  return targetPath;
-}
-
-function isDirectoryPath(targetPath, fsModule) {
-  try {
-    return fsModule.statSync(targetPath).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function samePath(left, right) {
-  if (typeof left !== "string" || typeof right !== "string") {
-    return false;
-  }
-
-  return path.resolve(left) === path.resolve(right);
-}
-
-function firstNonEmptyString(values) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return "";
-}
-
 function resolveThreadId(params) {
   if (!params || typeof params !== "object") {
     return "";
@@ -503,6 +480,11 @@ function resolveThreadId(params) {
   }
 
   return "";
+}
+
+// Keeps desktop deep links to a single safe route segment before handing them to OS launchers.
+function isValidDesktopThreadId(threadId) {
+  return typeof threadId === "string" && DESKTOP_THREAD_ID_PATTERN.test(threadId);
 }
 
 function desktopError(errorCode, userMessage, cause = null) {
@@ -564,6 +546,22 @@ async function openCodexApp({ bundleId, appPath, executor }) {
       timeout: HANDOFF_TIMEOUT_MS,
     });
   }
+}
+
+async function openWindowsDeepLink(targetUrl, { executor, env }) {
+  await executor(env?.SystemRoot ? path.join(env.SystemRoot, "System32", "rundll32.exe") : "rundll32.exe", [
+    "url.dll,FileProtocolHandler",
+    targetUrl,
+  ], {
+    timeout: HANDOFF_TIMEOUT_MS,
+    windowsHide: true,
+  });
+}
+
+async function refreshWindowsCodex(targetUrl, { executor, env, sleepFn, settleMs }) {
+  await openWindowsDeepLink(WINDOWS_BOUNCE_URL, { executor, env });
+  await sleepFn(settleMs);
+  await openWindowsDeepLink(targetUrl, { executor, env });
 }
 
 // Gives the desktop a short window to materialize the requested thread before the final deep link.

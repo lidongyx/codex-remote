@@ -289,6 +289,24 @@ extension CodexService {
         return result
     }
 
+    // Extracts persisted turn outcomes from canonical history so render grouping survives app relaunch.
+    func decodeTurnTerminalStatesFromThreadRead(_ threadObject: [String: JSONValue]) -> [String: CodexTurnTerminalState] {
+        let turns = threadObject["turns"]?.arrayValue ?? []
+        var result: [String: CodexTurnTerminalState] = [:]
+
+        for turnValue in turns {
+            guard let turnObject = turnValue.objectValue,
+                  let turnID = turnObject["id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !turnID.isEmpty,
+                  let terminalState = historyTurnTerminalState(turnObject) else {
+                continue
+            }
+            result[turnID] = terminalState
+        }
+
+        return result
+    }
+
     func decodeHistoryBaseDate(from threadObject: [String: JSONValue]) -> Date {
         if let rawCreatedAt = threadObject["createdAt"]?.doubleValue {
             return decodeUnixTimestamp(rawCreatedAt)
@@ -318,8 +336,7 @@ extension CodexService {
     }
 
     func decodeUnixTimestamp(_ rawValue: Double) -> Date {
-        let secondsValue = rawValue > 10_000_000_000 ? rawValue / 1000 : rawValue
-        return Date(timeIntervalSince1970: secondsValue)
+        CodexTimestampParser.decodeUnixTimestamp(rawValue)
     }
 
     func decodeItemText(from itemObject: [String: JSONValue]) -> String {
@@ -756,18 +773,7 @@ extension CodexService {
     }
 
     func parseHistoryDateString(_ value: String) -> Date? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: trimmed) {
-            return date
-        }
-
-        let fallbackFormatter = ISO8601DateFormatter()
-        fallbackFormatter.formatOptions = [.withInternetDateTime]
-        return fallbackFormatter.date(from: trimmed)
+        CodexTimestampParser.parseString(value)
     }
 
     func reconcileExistingMessage(_ localMessage: CodexMessage, with serverMessage: CodexMessage) -> CodexMessage {
@@ -1289,6 +1295,10 @@ extension CodexService {
     }
 
     func isCompletedHistoryTurn(_ turnObject: [String: JSONValue]) -> Bool {
+        historyTurnTerminalState(turnObject) == .completed
+    }
+
+    func historyTurnTerminalState(_ turnObject: [String: JSONValue]) -> CodexTurnTerminalState? {
         let statusObject = turnObject["status"]?.objectValue
         let rawStatus = firstNonEmptyString([
             turnObject["status"]?.stringValue,
@@ -1298,11 +1308,7 @@ extension CodexService {
             turnObject["result"]?.stringValue,
         ]) ?? ""
 
-        guard let terminalState = threadTerminalState(from: normalizeThreadStatusType(rawStatus)) else {
-            return false
-        }
-
-        return terminalState == .completed
+        return threadTerminalState(from: normalizeThreadStatusType(rawStatus))
     }
 
     // Parses collabAgentToolCall payloads into a stable summary row the timeline can render.

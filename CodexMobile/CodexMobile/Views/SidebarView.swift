@@ -627,6 +627,7 @@ private struct SidebarMacDirectoryBrowserSheet: View {
 
     @State private var currentPath: String? = nil
     @State private var listing: DesktopDirectoryListing? = nil
+    @State private var quickLocations: [DesktopDirectoryDescriptor] = []
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
 
@@ -638,6 +639,33 @@ private struct SidebarMacDirectoryBrowserSheet: View {
                         .font(AppFont.body())
                         .foregroundStyle(.secondary)
                         .listRowBackground(Color.clear)
+                }
+
+                if !quickLocations.isEmpty {
+                    Section("Quick Locations") {
+                        ForEach(quickLocations) { location in
+                            Button {
+                                currentPath = location.path
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: location.isHomeDirectory ? "house" : "folder")
+                                        .font(AppFont.body(weight: .medium))
+                                        .foregroundStyle(.secondary)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(location.name)
+                                            .font(AppFont.body(weight: .semibold))
+                                            .foregroundStyle(.primary)
+                                        Text(location.path)
+                                            .font(AppFont.caption())
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
                 }
 
                 if let listing {
@@ -789,6 +817,9 @@ private struct SidebarMacDirectoryBrowserSheet: View {
         defer { isLoading = false }
 
         do {
+            if quickLocations.isEmpty {
+                quickLocations = (try? await service.quickLocations()) ?? []
+            }
             let loadedListing = try await service.listDirectory(path: path)
             listing = loadedListing
             currentPath = loadedListing.directory.path

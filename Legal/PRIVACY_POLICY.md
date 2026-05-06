@@ -23,7 +23,7 @@ Remodex is a local-first remote companion for Codex on your Mac. In practice, th
 
 - **Chat messages and prompts** — Your messages are sent from the iPhone to your paired Mac for processing. After the secure transport handshake is complete, the relay forwards encrypted payloads and cannot read message contents.
 - **Photo attachments** — Images you attach from the camera or photo library are sent to your paired Mac over the secure channel.
-- **Voice recordings** — When you use voice mode, the App records temporary audio on your iPhone and may stream that audio directly from the iPhone to the speech-to-text provider configured through your paired Mac, such as Alibaba Cloud Bailian realtime ASR or OpenAI/ChatGPT transcription. Provider selection depends on your local paired-Mac configuration.
+- **Voice recordings** — When you use voice mode, the App records temporary audio on your iPhone and may send that audio directly from the iPhone to OpenAI/ChatGPT transcription using authentication resolved through your paired Mac's local bridge.
 - **Git operations** — Commands you initiate from the App, such as commit, pull, push, branch, or status actions, are executed on your paired Mac.
 
 ### 2.2 Information Collected Automatically
@@ -82,11 +82,10 @@ Once the secure session is active, the hosted relay does **not** decrypt your Re
 
 ### 4.2 Voice Transcription Providers
 
-When you use voice mode, your audio recording may be sent to the speech-to-text provider configured through your paired Mac, such as Alibaba Cloud Bailian realtime ASR or OpenAI/ChatGPT transcription.
+When you use voice mode, your audio recording may be sent to OpenAI/ChatGPT transcription using authentication resolved through your paired Mac's local bridge.
 
 This is the only instance where your data is processed by a third-party AI service.
 
-- Alibaba Cloud privacy policy: [www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-privacy-policy](https://www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-privacy-policy)
 - OpenAI privacy policy: [openai.com/privacy](https://openai.com/privacy)
 
 ### 4.3 RevenueCat

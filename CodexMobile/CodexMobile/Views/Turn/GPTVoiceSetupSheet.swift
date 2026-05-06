@@ -1,5 +1,5 @@
 // FILE: GPTVoiceSetupSheet.swift
-// Purpose: Shows a compact info sheet that explains how Remodex voice uses bridge-managed Bailian realtime dictation.
+// Purpose: Shows a compact info sheet that explains how Remodex voice uses bridge-managed ChatGPT transcription.
 // Layer: View
 // Exports: GPTVoiceSetupSheet
 // Depends on: SwiftUI, AppFont
@@ -21,9 +21,9 @@ struct GPTVoiceSetupSheet: View {
                         )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Voice mode uses Bailian realtime dictation")
+                        Text("Voice mode uses ChatGPT transcription")
                             .font(AppFont.subheadline(weight: .semibold))
-                        Text("Remodex asks the paired Mac bridge for your local Bailian realtime setup, then keeps the dictation flow on that realtime path only.")
+                        Text("Remodex records on the iPhone, asks your paired Mac bridge for ChatGPT auth, and uploads the clip for transcription.")
                             .font(AppFont.caption())
                             .foregroundStyle(.secondary)
                     }
@@ -37,22 +37,22 @@ struct GPTVoiceSetupSheet: View {
                     )
                     infoStep(
                         number: "2",
-                        title: "The phone asks your paired Mac bridge for setup",
-                        detail: "Remodex reads the Bailian realtime endpoint, model, and local auth that you configured on the Mac."
+                        title: "The phone asks your paired Mac bridge for auth",
+                        detail: "Remodex uses the ChatGPT session already available through your local Mac bridge."
                     )
                     infoStep(
                         number: "3",
-                        title: "Bailian transcribes while you speak",
-                        detail: "The iPhone streams PCM audio into the Bailian realtime session so the draft updates live while you speak."
+                        title: "ChatGPT transcribes the clip",
+                        detail: "The recorded WAV is sent with the bridge-resolved ChatGPT token after you release the mic."
                     )
                     infoStep(
                         number: "4",
                         title: "The text comes back to Remodex",
-                        detail: "Partial and final transcript text returns to the app and lands directly in your message composer."
+                        detail: "The final transcript returns to the app and lands directly in your message composer."
                     )
                 }
 
-                Text("In short: iPhone records locally, the paired Mac bridge supplies Bailian realtime setup, and transcript text streams back into the draft live.")
+                Text("In short: iPhone records locally, the paired Mac bridge supplies ChatGPT auth, and the final transcript comes back to the draft.")
                     .font(AppFont.caption())
                     .foregroundStyle(.secondary)
 

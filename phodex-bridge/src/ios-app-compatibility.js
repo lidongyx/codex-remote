@@ -1,11 +1,11 @@
 // FILE: ios-app-compatibility.js
-// Purpose: Centralizes conservative bridge gating for App Store iPhone version compatibility.
+// Purpose: Keeps bridge/iPhone version compatibility permissive for local-first builds.
 // Layer: CLI helper
 // Exports: version comparison + bridge/iPhone compatibility helpers
 // Depends on: none
 
-const MINIMUM_SUPPORTED_IOS_APP_VERSION = "1.1";
-const IOS_APP_COMPATIBILITY_GATE_BRIDGE_VERSION = "1.3.8";
+const MINIMUM_SUPPORTED_IOS_APP_VERSION = "";
+const IOS_APP_COMPATIBILITY_GATE_BRIDGE_VERSION = "";
 const LEGACY_BRIDGE_VERSION_FOR_IOS_1_0 = "1.3.7";
 const LEGACY_BRIDGE_DOWNGRADE_COMMAND = `npm install -g remodex@${LEGACY_BRIDGE_VERSION_FOR_IOS_1_0}`;
 const NOTICE_BOX_WIDTH = 74;
@@ -16,50 +16,14 @@ function buildIOSAppCompatibilitySnapshot({
 } = {}) {
   const normalizedBridgeVersion = normalizeVersionString(bridgeVersion);
   const normalizedIOSAppVersion = normalizeVersionString(iosAppVersion);
-  const enforcesMinimumIOSAppVersion = shouldEnforceIOSAppCompatibility(normalizedBridgeVersion);
-
-  if (!enforcesMinimumIOSAppVersion) {
-    return buildSnapshot({
-      bridgeVersion: normalizedBridgeVersion,
-      iosAppVersion: normalizedIOSAppVersion,
-      enforcesMinimumIOSAppVersion: false,
-      isKnownIOSAppVersion: Boolean(normalizedIOSAppVersion),
-      isCompatible: true,
-      requiresAppUpdate: false,
-      message: "",
-    });
-  }
-
-  if (!normalizedIOSAppVersion) {
-    return buildSnapshot({
-      bridgeVersion: normalizedBridgeVersion,
-      iosAppVersion: "",
-      enforcesMinimumIOSAppVersion: true,
-      isKnownIOSAppVersion: false,
-      isCompatible: true,
-      requiresAppUpdate: false,
-      message: "",
-    });
-  }
-
-  const isCompatible = compareNumericVersions(
-    normalizedIOSAppVersion,
-    MINIMUM_SUPPORTED_IOS_APP_VERSION
-  ) >= 0;
-
   return buildSnapshot({
     bridgeVersion: normalizedBridgeVersion,
     iosAppVersion: normalizedIOSAppVersion,
-    enforcesMinimumIOSAppVersion: true,
-    isKnownIOSAppVersion: true,
-    isCompatible,
-    requiresAppUpdate: !isCompatible,
-    message: isCompatible
-      ? ""
-      : buildLegacyIOSAppCompatibilityMessage({
-        bridgeVersion: normalizedBridgeVersion,
-        iosAppVersion: normalizedIOSAppVersion,
-      }),
+    enforcesMinimumIOSAppVersion: false,
+    isKnownIOSAppVersion: Boolean(normalizedIOSAppVersion),
+    isCompatible: true,
+    requiresAppUpdate: false,
+    message: "",
   });
 }
 
@@ -87,53 +51,21 @@ function buildSnapshot({
 }
 
 function shouldEnforceIOSAppCompatibility(bridgeVersion) {
-  const normalizedBridgeVersion = normalizeVersionString(bridgeVersion);
-  if (!normalizedBridgeVersion) {
-    return false;
-  }
-
-  return compareNumericVersions(
-    normalizedBridgeVersion,
-    IOS_APP_COMPATIBILITY_GATE_BRIDGE_VERSION
-  ) >= 0;
+  return false;
 }
 
 function buildLegacyIOSAppCompatibilityMessage({
   bridgeVersion,
   iosAppVersion,
 } = {}) {
-  const normalizedBridgeVersion = normalizeVersionString(bridgeVersion) || "this bridge";
-  const normalizedIOSAppVersion = normalizeVersionString(iosAppVersion) || "an older version";
-
-  return `Remodex bridge ${normalizedBridgeVersion} requires Remodex iPhone `
-    + `${MINIMUM_SUPPORTED_IOS_APP_VERSION} or later. `
-    + `Update the iPhone app from the App Store first, or install Remodex bridge `
-    + `${LEGACY_BRIDGE_VERSION_FOR_IOS_1_0} to keep using iPhone ${normalizedIOSAppVersion}.`;
+  return "";
 }
 
 function buildCachedIOSAppCompatibilityWarning({
   bridgeVersion,
   iosAppVersion,
 } = {}) {
-  const snapshot = buildIOSAppCompatibilitySnapshot({
-    bridgeVersion,
-    iosAppVersion,
-  });
-
-  if (!snapshot.requiresAppUpdate) {
-    return "";
-  }
-
-  return formatNoticeBox({
-    title: "!!! WARNING !!!",
-    lines: [
-      `Remodex bridge ${snapshot.bridgeVersion || "latest"} requires Remodex iPhone ${snapshot.minimumSupportedIOSAppVersion} or later.`,
-      "Update the iPhone app from the App Store first.",
-      "",
-      `Need to keep using iPhone ${snapshot.iosAppVersion}? Install bridge ${snapshot.legacyBridgeVersion}:`,
-      snapshot.downgradeCommand,
-    ],
-  });
+  return "";
 }
 
 function formatNoticeBox({ title, lines }) {

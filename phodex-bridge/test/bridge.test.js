@@ -8,7 +8,6 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildHeartbeatBridgeStatus,
-  buildMacRegistration,
   createMacOSBridgeWakeAssertion,
   hasRelayConnectionGoneStale,
   persistBridgePreferences,
@@ -312,33 +311,4 @@ test("sanitizeThreadHistoryImagesForRelay strips bulky compaction replacement hi
     id: "item-compaction-camel",
     type: "contextCompaction",
   });
-});
-
-test("buildMacRegistration advertises the persistent device channel metadata", () => {
-  const registration = buildMacRegistration(
-    {
-      macDeviceId: "mac-123",
-      macIdentityPublicKey: "pub-key",
-      trustedPhones: {
-        "phone-123": "phone-pub-key",
-      },
-    },
-    {
-      pairingCode: "ABCD1234",
-      pairingPayload: {
-        v: 2,
-        expiresAt: 1234567890,
-      },
-    }
-  );
-
-  assert.equal(registration.macDeviceId, "mac-123");
-  assert.equal(registration.bridgeAddressingMode, "device");
-  assert.equal(registration.bridgeChannelType, "persistent_device_channel");
-  assert.equal(registration.supportsTrustedDeviceConnect, true);
-  assert.equal(registration.supportsTrustedSessionResolve, true);
-  assert.equal(registration.bridgeTransport, "relay_websocket");
-  assert.equal(registration.secureProtocolVersion, 1);
-  assert.equal(registration.trustedPhoneDeviceId, "phone-123");
-  assert.equal(registration.trustedPhonePublicKey, "phone-pub-key");
 });

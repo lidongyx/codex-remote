@@ -251,6 +251,16 @@ extension CodexService {
         )
     }
 
+    // Tracks the Git checkpoint diff when available, without losing runtime diff fallback coverage.
+    func recordWorkspaceCheckpointChangeSet(threadId: String, turnId: String, diff: String) {
+        recordChangeSetPatch(
+            threadId: threadId,
+            turnId: turnId,
+            patch: diff,
+            source: .workspaceCheckpoint
+        )
+    }
+
     // Tracks a conservative single-patch fallback when no final turn diff is available.
     func recordFallbackFileChangePatch(threadId: String, turnId: String, patch: String) {
         recordChangeSetPatch(

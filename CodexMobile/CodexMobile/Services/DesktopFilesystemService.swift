@@ -20,6 +20,13 @@ struct DesktopDirectoryDescriptor: Decodable, Hashable, Sendable, Identifiable {
         case isHomeDirectory
         case isRootDirectory
     }
+
+    init(path: String, name: String, isHomeDirectory: Bool = false, isRootDirectory: Bool = false) {
+        self.path = path
+        self.name = name
+        self.isHomeDirectory = isHomeDirectory
+        self.isRootDirectory = isRootDirectory
+    }
 }
 
 struct DesktopDirectoryListing: Decodable, Sendable {
@@ -31,6 +38,16 @@ struct DesktopDirectoryListing: Decodable, Sendable {
         case directory
         case parentDirectory
         case children
+    }
+
+    init(
+        directory: DesktopDirectoryDescriptor,
+        parentDirectory: DesktopDirectoryDescriptor?,
+        children: [DesktopDirectoryDescriptor]
+    ) {
+        self.directory = directory
+        self.parentDirectory = parentDirectory
+        self.children = children
     }
 }
 
@@ -60,6 +77,14 @@ final class DesktopFilesystemService {
     }
 
     func listDirectory(path: String? = nil) async throws -> DesktopDirectoryListing {
+        do {
+            return try await listProjectDirectory(path: path)
+        } catch let error as CodexServiceError {
+            if !shouldFallbackToLegacyFilesystem(for: error) {
+                throw mapCodexError(error)
+            }
+        }
+
         var params: RPCObject = [:]
         if let path {
             let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,6 +114,89 @@ final class DesktopFilesystemService {
                 throw DesktopFilesystemError.bridgeError(code: nil, message: error.errorDescription)
             }
         }
+    }
+
+    func quickLocations() async throws -> [DesktopDirectoryDescriptor] {
+        let locations = try await codex.fetchProjectQuickLocations()
+        return locations.map { location in
+            DesktopDirectoryDescriptor(
+                path: location.path,
+                name: location.label,
+                isHomeDirectory: location.id == "home",
+                isRootDirectory: false
+            )
+        }
+    }
+
+    private func listProjectDirectory(path: String?) async throws -> DesktopDirectoryListing {
+        let trimmedPath = path?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let listing: CodexProjectDirectoryListing
+        if let trimmedPath, !trimmedPath.isEmpty {
+            listing = try await codex.listProjectDirectory(path: trimmedPath)
+        } else if let firstLocation = try await codex.fetchProjectQuickLocations().first {
+            listing = try await codex.listProjectDirectory(path: firstLocation.path)
+        } else {
+            throw DesktopFilesystemError.invalidResponse
+        }
+
+        return DesktopDirectoryListing(
+            directory: DesktopDirectoryDescriptor(
+                path: listing.path,
+                name: Self.displayName(forPath: listing.path),
+                isHomeDirectory: false,
+                isRootDirectory: listing.parentPath == nil
+            ),
+            parentDirectory: listing.parentPath.map { parentPath in
+                DesktopDirectoryDescriptor(
+                    path: parentPath,
+                    name: Self.displayName(forPath: parentPath),
+                    isHomeDirectory: false,
+                    isRootDirectory: false
+                )
+            },
+            children: listing.entries.map { entry in
+                DesktopDirectoryDescriptor(
+                    path: entry.path,
+                    name: entry.name,
+                    isHomeDirectory: false,
+                    isRootDirectory: false
+                )
+            }
+        )
+    }
+
+    private func shouldFallbackToLegacyFilesystem(for error: CodexServiceError) -> Bool {
+        guard case .rpcError(let rpcError) = error else {
+            return false
+        }
+
+        let message = rpcError.message.lowercased()
+        return rpcError.code == -32601
+            || message.contains("unknown method")
+            || message.contains("method not found")
+            || message.contains("project/quicklocations")
+            || message.contains("project/listdirectory")
+    }
+
+    private func mapCodexError(_ error: CodexServiceError) -> DesktopFilesystemError {
+        switch error {
+        case .disconnected:
+            return .disconnected
+        case .rpcError(let rpcError):
+            let errorCode = rpcError.data?.objectValue?["errorCode"]?.stringValue
+            return .bridgeError(code: errorCode, message: rpcError.message)
+        default:
+            return .bridgeError(code: nil, message: error.errorDescription)
+        }
+    }
+
+    private static func displayName(forPath path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "Folder"
+        }
+        let name = URL(fileURLWithPath: trimmed).lastPathComponent
+        return name.isEmpty ? trimmed : name
     }
 }
 

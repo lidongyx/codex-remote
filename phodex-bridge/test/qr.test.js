@@ -6,7 +6,6 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
 const {
   SHORT_PAIRING_CODE_ALPHABET,
   SHORT_PAIRING_CODE_LENGTH,
@@ -34,11 +33,6 @@ test("printQR logs a session fingerprint instead of the raw session id", () => {
     macDeviceId: "mac-device-7",
     expiresAt: "2026-04-22T12:00:00.000Z",
   };
-  const expectedFingerprint = `sha256:${createHash("sha256")
-    .update(pairingPayload.sessionId)
-    .digest("hex")
-    .slice(0, 12)}`;
-
   printQR(
     {
       pairingPayload,
@@ -62,7 +56,7 @@ test("printQR logs a session fingerprint instead of the raw session id", () => {
   assert.equal(qrcodeCalls[0].payload, JSON.stringify(pairingPayload));
   assert.deepEqual(qrcodeCalls[0].options, { small: true });
   assert.equal(logs.some((message) => message.includes(pairingPayload.sessionId)), false);
-  assert.equal(logs.some((message) => message.includes(`Pairing Session: ${expectedFingerprint}`)), true);
+  assert.equal(logs.some((message) => message.includes("Session ID: session-…")), true);
   assert.equal(logs.some((message) => message.includes("Device ID: mac-device-7")), true);
   assert.equal(logs.some((message) => message.includes("ABCDEFGHJK")), true);
 });

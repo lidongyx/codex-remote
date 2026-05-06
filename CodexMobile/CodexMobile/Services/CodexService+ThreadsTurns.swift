@@ -843,7 +843,22 @@ extension CodexService {
             if let modelIdentifier = requestedSignature.modelIdentifier {
                 params["model"] = .string(modelIdentifier)
             }
-            let response = try await sendRequestWithSandboxFallback(method: "thread/resume", baseParams: params)
+            if supportsTurnPagination {
+                params["excludeTurns"] = .bool(true)
+            }
+            var didRequestExcludedTurns = params["excludeTurns"] != nil
+            let response: RPCMessage
+            do {
+                response = try await sendRequestWithSandboxFallback(method: "thread/resume", baseParams: params)
+            } catch {
+                guard didRequestExcludedTurns, consumeUnsupportedTurnPagination(error) else {
+                    throw error
+                }
+
+                params.removeValue(forKey: "excludeTurns")
+                didRequestExcludedTurns = false
+                response = try await sendRequestWithSandboxFallback(method: "thread/resume", baseParams: params)
+            }
             guard !Task.isCancelled,
                   isPerThreadRefreshCurrent(for: threadId, generation: refreshGeneration) else {
                 throw CancellationError()
@@ -855,6 +870,7 @@ extension CodexService {
             }
 
             var resumedThread: CodexThread?
+            var didReceiveEmbeddedHistory = false
             if let threadValue = resultObject["thread"],
                var decodedThread = decodeModel(CodexThread.self, from: threadValue) {
                 decodedThread.syncState = .live
@@ -865,6 +881,7 @@ extension CodexService {
                     let historyMessages = decodeMessagesFromThreadRead(threadId: threadId, threadObject: threadObject)
                     registerSubagentThreads(from: historyMessages, parentThreadId: threadId)
                     if !historyMessages.isEmpty {
+                        didReceiveEmbeddedHistory = true
                         let existingMessages = messagesByThread[threadId] ?? []
                         let activeThreadIDs = Set(activeTurnIdByThread.keys)
                         let runningIDs = runningThreadIDs
@@ -913,6 +930,12 @@ extension CodexService {
                 throw CancellationError()
             }
             hydratedThreadIDs.insert(threadId)
+            if didRequestExcludedTurns {
+                initialTurnsLoadedByThreadID.insert(threadId)
+            } else if didReceiveEmbeddedHistory {
+                markThreadLocalHistoryStartAuthoritative(threadId, clearRemoteCursor: true)
+                initialTurnsLoadedByThreadID.insert(threadId)
+            }
             resumedThreadIDs.insert(threadId)
             return resumedThread
         }

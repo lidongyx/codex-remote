@@ -601,7 +601,7 @@ private struct SettingsGPTAccountCard: View {
 
     var body: some View {
         SettingsCard(title: "Voice mode") {
-            Text("Voice mode uses Bailian realtime dictation configured on your paired Mac bridge.")
+            Text("Voice mode uses ChatGPT transcription through your paired Mac bridge.")
                 .font(AppFont.caption())
                 .foregroundStyle(.secondary)
 

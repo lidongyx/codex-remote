@@ -578,9 +578,10 @@ function readBridgeConfig({
       DEFAULT_DEBOUNCE_MS
     ),
     keepMacAwakeEnabled: explicitKeepMacAwakeEnabled == null
-      ? (persistedKeepMacAwakeEnabled == null ? true : persistedKeepMacAwakeEnabled)
+      ? (persistedKeepMacAwakeEnabled == null ? false : persistedKeepMacAwakeEnabled)
       : explicitKeepMacAwakeEnabled,
     codexEndpoint,
+    desktopIpcSocketPath: readFirstDefinedEnv(["REMODEX_DESKTOP_IPC_SOCKET"], "", env),
     refreshCommand,
     codexBundleId: readFirstDefinedEnv(["REMODEX_CODEX_BUNDLE_ID"], DEFAULT_BUNDLE_ID, env),
     codexAppPath: DEFAULT_APP_PATH,

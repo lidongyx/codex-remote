@@ -14,8 +14,26 @@ const {
   redactAuthStatus,
 } = require("../src/account-status");
 
+const macHostMetadata = {
+  codexTransportMode: null,
+  hostPlatform: "macos",
+  hostCapabilities: {
+    desktopHandoff: true,
+    displayWake: true,
+    keepAwake: true,
+    hostBrowserLogin: true,
+  },
+};
+
+function withMacHost(params = {}) {
+  return {
+    hostPlatform: "darwin",
+    ...params,
+  };
+}
+
 test("composeAccountStatus marks authenticated accounts and carries account metadata", () => {
-  const status = composeAccountStatus({
+  const status = composeAccountStatus(withMacHost({
     accountRead: {
       account: {
         type: "chatgpt",
@@ -32,7 +50,7 @@ test("composeAccountStatus marks authenticated accounts and carries account meta
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     status: "authenticated",
@@ -46,12 +64,12 @@ test("composeAccountStatus marks authenticated accounts and carries account meta
     requiresOpenaiAuth: false,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
 test("composeAccountStatus keeps authenticated UI state when account/read still has explicit login info", () => {
-  const status = composeAccountStatus({
+  const status = composeAccountStatus(withMacHost({
     accountRead: {
       account: {
         type: "chatgpt",
@@ -67,7 +85,7 @@ test("composeAccountStatus keeps authenticated UI state when account/read still 
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     status: "authenticated",
@@ -81,12 +99,12 @@ test("composeAccountStatus keeps authenticated UI state when account/read still 
     requiresOpenaiAuth: false,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
 test("composeAccountStatus reports reauth when auth status explicitly requires ChatGPT login again", () => {
-  const status = composeAccountStatus({
+  const status = composeAccountStatus(withMacHost({
     accountRead: {
       account: {
         type: "chatgpt",
@@ -103,7 +121,7 @@ test("composeAccountStatus reports reauth when auth status explicitly requires C
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     status: "expired",
@@ -117,7 +135,7 @@ test("composeAccountStatus reports reauth when auth status explicitly requires C
     requiresOpenaiAuth: true,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
@@ -126,6 +144,7 @@ test("redactAuthStatus strips token-bearing fields from the status snapshot", ()
     authMethod: "chatgpt",
     authToken: null,
   }, {
+    hostPlatform: "darwin",
     accountRead: {
       account: null,
       requiresOpenaiAuth: true,
@@ -148,13 +167,13 @@ test("redactAuthStatus strips token-bearing fields from the status snapshot", ()
     expiresAt: null,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
   assert.equal(Object.prototype.hasOwnProperty.call(status, "authToken"), false);
 });
 
 test("composeAccountStatus keeps a fresh signed-out state distinct from reauth", () => {
-  const status = composeAccountStatus({
+  const status = composeAccountStatus(withMacHost({
     accountRead: {
       account: null,
       requiresOpenaiAuth: true,
@@ -167,7 +186,7 @@ test("composeAccountStatus keeps a fresh signed-out state distinct from reauth",
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     status: "not_logged_in",
@@ -181,7 +200,7 @@ test("composeAccountStatus keeps a fresh signed-out state distinct from reauth",
     requiresOpenaiAuth: true,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
@@ -204,7 +223,7 @@ test("composeAccountStatus reports a pending login when no token is available ye
 });
 
 test("composeSanitizedAuthStatusFromSettledResults keeps the available auth snapshot when account/read fails", () => {
-  const status = composeSanitizedAuthStatusFromSettledResults({
+  const status = composeSanitizedAuthStatusFromSettledResults(withMacHost({
     accountReadResult: {
       status: "rejected",
       reason: new Error("account/read failed"),
@@ -221,7 +240,7 @@ test("composeSanitizedAuthStatusFromSettledResults keeps the available auth snap
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     authMethod: "chatgpt",
@@ -234,12 +253,12 @@ test("composeSanitizedAuthStatusFromSettledResults keeps the available auth snap
     expiresAt: null,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
 test("composeSanitizedAuthStatusFromSettledResults keeps authenticated UI state when getAuthStatus fails", () => {
-  const status = composeSanitizedAuthStatusFromSettledResults({
+  const status = composeSanitizedAuthStatusFromSettledResults(withMacHost({
     accountReadResult: {
       status: "fulfilled",
       value: {
@@ -258,7 +277,7 @@ test("composeSanitizedAuthStatusFromSettledResults keeps authenticated UI state 
       bridgeVersion: bridgePackageVersion,
       bridgeLatestVersion: "9.9.9",
     },
-  });
+  }));
 
   assert.deepEqual(status, {
     authMethod: "chatgpt",
@@ -271,7 +290,7 @@ test("composeSanitizedAuthStatusFromSettledResults keeps authenticated UI state 
     expiresAt: null,
     bridgeVersion: bridgePackageVersion,
     bridgeLatestVersion: "9.9.9",
-    codexTransportMode: null,
+    ...macHostMetadata,
   });
 });
 
